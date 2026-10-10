@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+:root {
+  --background: #F5F8F1;
+  --foreground: #38483B;
+  
+  --color-forest: #294B36;
+  --color-forest-dark: #1E3526;
+  --color-forest-light: #3D6A4E;
+  --color-sage: #5F7363;
+  --color-sage-light: #E4EEDF;
+  --color-earth: #3E6548;
+  --color-mint: #D2E3CE;
+  --color-border: #DCE5D8;
+  --color-card: #FFFFFF;
+  --color-cream: #FFFFFF;
+}
+
+@theme {
+  --color-forest: #294B36;
+  --color-forest-dark: #1E3526;
+  --color-forest-light: #3D6A4E;
+  --color-sage: #5F7363;
+  --color-sage-light: #E4EEDF;
+  --color-earth: #3E6548;
+  --color-mint: #D2E3CE;
+  --color-border: #DCE5D8;
+  --color-card: #FFFFFF;
+  --color-cream: #FFFFFF;
+}
+
+body {
+  background-color: #F5F8F1;
+  color: #38483B;
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* ── Reliable brand utility fallbacks ── */
+.bg-forest { background-color: #294B36 !important; }
+.bg-forest-dark { background-color: #1E3526 !important; }
+.bg-forest-light { background-color: #3D6A4E !important; }
+.text-forest { color: #294B36; }
+.text-forest-dark { color: #1E3526; }
+.text-forest-light { color: #3D6A4E; }
+
+.bg-sage-light { background-color: #E4EEDF; }
+.text-sage { color: #5F7363; }
+.border-sage-light { border-color: #E4EEDF; }
+
+.bg-mint { background-color: #D2E3CE; }
+.text-earth { color: #3E6548; }
+.border-forest { border-color: #294B36; }
+
+/* ── High-Contrast Button Text Fixes ── */
+.text-cream,
+.text-white {
+  color: #FFFFFF !important;
+}
+
+/* Ensure buttons with forest background ALWAYS have crisp white text */
+button.bg-forest,
+button.bg-forest-dark,
+button.bg-forest-light,
+a.bg-forest,
+a.bg-forest-dark,
+.bg-forest,
+.bg-forest-dark,
+button[class*="bg-[#294B36]"],
+button[class*="bg-[#1E3526]"],
+a[class*="bg-[#294B36]"],
+a[class*="bg-[#1E3526]"] {
+  color: #FFFFFF !important;
+}
+
+button[class*="bg-[#294B36]"] span,
+button[class*="bg-[#1E3526]"] span,
+button.bg-forest span,
+button.bg-forest-dark span,
+a[class*="bg-[#294B36]"] span,
+a[class*="bg-[#1E3526]"] span {
+  color: #FFFFFF !important;
+}
+
+/* Custom smooth scroll */
+html {
+  scroll-behavior: smooth;
+}
