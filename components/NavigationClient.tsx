@@ -52,8 +52,8 @@ export function NavigationClient({ userId }: { userId: string | null }) {
             href="/" 
             className="flex items-center gap-2.5 font-bold text-xl tracking-tight text-[#1E3526] hover:opacity-90 transition-opacity"
           >
-            <div className="w-9 h-9 rounded-xl bg-[#294B36] flex items-center justify-center text-white shadow-xs">
-              <Leaf className="w-5 h-5 text-[#D2E3CE]" />
+            <div className="w-9 h-9 rounded-xl overflow-hidden bg-[#1E3526] flex items-center justify-center border border-[#DCE5D8] shadow-xs shrink-0">
+              <img src="/logo-icon.png" alt="EarthLens AI" className="w-full h-full object-cover" />
             </div>
             <span>
               EarthLens <span className="text-[#3E6548] font-semibold text-sm tracking-normal">AI</span>

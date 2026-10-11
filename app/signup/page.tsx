@@ -43,8 +43,8 @@ export default function SignupPage() {
   return (
     <div className="flex-1 w-full max-w-md mx-auto p-6 flex flex-col justify-center animate-in fade-in duration-500 min-h-[80vh]">
       <div className="flex flex-col items-center mb-8">
-        <div className="w-16 h-16 bg-mint/50 text-forest rounded-full flex items-center justify-center mb-4">
-          <Leaf className="w-8 h-8" />
+        <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-md border border-[#DCE5D8] mb-4 bg-[#1E3526] flex items-center justify-center">
+          <img src="/logo-icon.png" alt="EarthLens AI" className="w-full h-full object-cover" />
         </div>
         <h1 className="text-3xl font-bold text-forest">Join EarthLens</h1>
         <p className="text-sage mt-2">Start documenting your nature discoveries</p>

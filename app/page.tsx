@@ -476,9 +476,9 @@ export default async function HomePage() {
       <footer className="w-full bg-[#EAF1E5] border-t border-[#DCE5D8] mt-12 py-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col md:flex-row items-center justify-between gap-6 text-xs text-[#5F7363]">
           
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#294B36] flex items-center justify-center text-white">
-              <Leaf className="w-4 h-4 text-[#D2E3CE]" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg overflow-hidden bg-[#1E3526] flex items-center justify-center border border-[#DCE5D8] shadow-2xs shrink-0">
+              <img src="/logo-icon.png" alt="EarthLens AI" className="w-full h-full object-cover" />
             </div>
             <span className="font-bold text-[#1E3526] text-sm">EarthLens AI</span>
             <span className="text-[#5F7363]">| Find Nature. Discover Yourself.</span>

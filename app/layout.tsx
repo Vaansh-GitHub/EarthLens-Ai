@@ -17,6 +17,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "EarthLens AI - Find Nature. Discover Yourself.",
   description: "Explore nature, photograph something interesting outdoors, discover information about it using AI, and reflect on what you learned.",
+  icons: {
+    icon: [
+      { url: "/logo-icon.png", sizes: "512x512", type: "image/png" },
+      { url: "/favicon.ico" },
+    ],
+    apple: [
+      { url: "/logo-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
 };
 
 export default function RootLayout({
