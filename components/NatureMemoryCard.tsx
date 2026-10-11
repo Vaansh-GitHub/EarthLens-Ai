@@ -41,7 +41,7 @@ export function NatureMemoryCard({ image, title, reflection, date, styleVariant,
         
         <div className="mt-auto pt-6 flex justify-between items-center text-xs font-medium opacity-60">
           <span>{date}</span>
-          <span>#TouchGrass</span>
+          <span>An AI to link you to nature</span>
         </div>
       </div>
     </div>

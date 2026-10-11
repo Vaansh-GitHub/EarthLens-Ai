@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserId, verifyCsrfOrigin } from "@/lib/server/auth";
 import { getDb } from "@/lib/server/mongodb";
+import { getDailyQuest, evaluateQuestMatch } from "@/lib/server/quests";
 import { z } from "zod";
 
 const JournalEntrySchema = z.object({
@@ -41,20 +42,74 @@ export async function POST(request: Request) {
     }
 
     const db = await getDb();
+
+    // Check if /api/analyze already saved this discovery for this user
+    let existingDiscovery = null;
+    if (parsed.data.observation?.photoUrl) {
+      existingDiscovery = await db.collection("discoveries").findOne({
+        userId,
+        "observation.photoUrl": parsed.data.observation.photoUrl,
+      });
+    }
+
+    if (existingDiscovery) {
+      if (parsed.data.memoryCard) {
+        await db.collection("discoveries").updateOne(
+          { _id: existingDiscovery._id },
+          { $set: { memoryCard: parsed.data.memoryCard, updatedAt: new Date() } }
+        );
+      }
+      return NextResponse.json({
+        success: true,
+        data: {
+          _id: existingDiscovery._id,
+          id: existingDiscovery._id.toString(),
+          xpAwarded: 0,
+          questMatch: existingDiscovery.questMatch,
+        }
+      }, { status: 200 });
+    }
+
+    // Evaluate if the discovery matches today's daily quest (70% - 100% threshold)
+    const todayQuest = await getDailyQuest();
+    const questMatch = await evaluateQuestMatch(todayQuest, parsed.data.analysis, parsed.data.observation);
+
+    // Standard discovery gives 50 XP; matching the quest (70-100%) adds the quest reward (e.g. +50 XP)
+    let xpAwarded = 50;
+    if (questMatch.matched) {
+      xpAwarded += questMatch.bonusXp;
+    }
+
     const result = await db.collection("discoveries").insertOne({
       userId,
       ...parsed.data,
+      questMatch: {
+        questDate: todayQuest.date,
+        questTitle: todayQuest.title,
+        score: questMatch.score,
+        matched: questMatch.matched,
+        bonusXp: questMatch.bonusXp,
+        reason: questMatch.reason,
+      },
       createdAt: new Date(),
       updatedAt: new Date(),
     });
 
-    // Increment user's experience points for completing a discovery
+    // Increment user's experience points
     await db.collection("users").updateOne(
       { _id: userId },
-      { $inc: { xp: 50 }, $set: { updatedAt: new Date() } }
+      { $inc: { xp: xpAwarded }, $set: { updatedAt: new Date() } }
     );
 
-    return NextResponse.json({ success: true, data: { _id: result.insertedId, id: result.insertedId.toString() } }, { status: 201 });
+    return NextResponse.json({
+      success: true,
+      data: {
+        _id: result.insertedId,
+        id: result.insertedId.toString(),
+        xpAwarded,
+        questMatch,
+      }
+    }, { status: 201 });
   } catch (error) {
     console.error("Journal POST Error:", error);
     return NextResponse.json({ success: false, error: { code: "INTERNAL_ERROR", message: "Failed to save journal entry" } }, { status: 500 });

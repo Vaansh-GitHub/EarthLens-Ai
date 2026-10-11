@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { Download, Layout, Sparkles, CheckCircle2 } from "lucide-react";
 import { NatureMemoryCard } from "@/components/NatureMemoryCard";
 
+import { getDraftDiscovery, getDiscoveryById } from "@/lib/client/journal-db";
+
 const FALLBACK_DATA = {
   image: "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&q=80&w=800",
   title: "Monarch Butterfly",
@@ -24,16 +26,51 @@ export function StudioClient() {
 
   // Hidden canvas for rendering high-res PNG
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const createdObjectUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (createdObjectUrlRef.current) {
+        URL.revokeObjectURL(createdObjectUrlRef.current);
+        createdObjectUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  const updateCardImageBlob = (blob: Blob) => {
+    if (createdObjectUrlRef.current) {
+      URL.revokeObjectURL(createdObjectUrlRef.current);
+    }
+    const url = URL.createObjectURL(blob);
+    createdObjectUrlRef.current = url;
+    return url;
+  };
 
   useEffect(() => {
     async function loadData() {
-      if (id === "new") {
+      if (id === "new" || !id) {
         try {
+          // Check IndexedDB draft first
+          const draft = await getDraftDiscovery();
+          if (draft) {
+            const a = draft.analysis;
+            const quote = a?.metaphoricalLesson || a?.lifeLesson || a?.quote || FALLBACK_DATA.quote;
+            const title = a?.candidateCommonName || a?.candidateScientificName || a?.candidateIdentification || "Field Discovery";
+            let image = FALLBACK_DATA.image;
+            if (draft.imageBlob) {
+              image = updateCardImageBlob(draft.imageBlob);
+            }
+            setCardData({ image, title, quote });
+            setReflection(quote);
+            return;
+          }
+
+          // Fallback to sessionStorage
           const stored = typeof window !== "undefined" ? sessionStorage.getItem("earthlens_current_discovery") : null;
           if (stored) {
             const parsed = JSON.parse(stored);
             const a = parsed.analysis;
-            const quote = a?.quote || a?.metaphoricalLesson || FALLBACK_DATA.quote;
+            const quote = a?.metaphoricalLesson || a?.lifeLesson || a?.quote || FALLBACK_DATA.quote;
             const title = a?.candidateCommonName || a?.candidateScientificName || "Field Discovery";
             const image = parsed.imageUrl || FALLBACK_DATA.image;
 
@@ -43,28 +80,59 @@ export function StudioClient() {
         } catch (err) {
           console.error("Failed to load discovery for Studio:", err);
         }
-      } else if (id && id.length === 24) {
+      } else {
         try {
-          const res = await fetch(`/api/journal/${id}`);
-          const resJson = await res.json();
-          if (resJson.success && resJson.data) {
-            const doc = resJson.data;
-            const a = doc.analysis;
-            const title = a?.candidateCommonName || a?.candidateIdentification || "Field Discovery";
-            const quote = doc.memoryCard?.quote || a?.quote || a?.metaphoricalLesson || FALLBACK_DATA.quote;
-            const image = doc.observation?.photoUrl || FALLBACK_DATA.image;
-
+          // Load from IndexedDB
+          const localDoc = await getDiscoveryById(id);
+          if (localDoc) {
+            const a = localDoc.analysis;
+            const title = a?.candidateCommonName || a?.candidateScientificName || a?.candidateIdentification || "Field Discovery";
+            const quote = a?.metaphoricalLesson || a?.lifeLesson || localDoc.memoryCard?.quote || FALLBACK_DATA.quote;
+            let image = FALLBACK_DATA.image;
+            if (localDoc.imageBlob) {
+              image = updateCardImageBlob(localDoc.imageBlob);
+            }
             setCardData({ image, title, quote });
             setReflection(quote);
-            if (doc.memoryCard?.template) {
-              setStyleVariant(doc.memoryCard.template as "light" | "dark" | "earthy");
+            if (localDoc.memoryCard?.template) {
+              const tmpl = localDoc.memoryCard.template;
+              if (tmpl === "light" || tmpl === "dark" || tmpl === "earthy") {
+                setStyleVariant(tmpl);
+              }
             }
-            if (doc.memoryCard?.showPhoto !== undefined) {
-              setShowPhoto(doc.memoryCard.showPhoto);
+            if (localDoc.memoryCard?.showPhoto !== undefined) {
+              setShowPhoto(localDoc.memoryCard.showPhoto);
             }
+            return;
           }
         } catch (err) {
-          console.error("Failed to fetch journal entry for Studio:", err);
+          console.warn("Failed to fetch local discovery for Studio:", err);
+        }
+
+        // Legacy cloud fallback
+        if (id.length === 24) {
+          try {
+            const res = await fetch(`/api/journal/${id}`);
+            const resJson = await res.json();
+            if (resJson.success && resJson.data) {
+              const doc = resJson.data;
+              const a = doc.analysis;
+              const title = a?.candidateCommonName || a?.candidateIdentification || "Field Discovery";
+              const quote = a?.metaphoricalLesson || a?.lifeLesson || doc.memoryCard?.quote || FALLBACK_DATA.quote;
+              const image = doc.observation?.photoUrl || FALLBACK_DATA.image;
+
+              setCardData({ image, title, quote });
+              setReflection(quote);
+              if (doc.memoryCard?.template) {
+                setStyleVariant(doc.memoryCard.template as "light" | "dark" | "earthy");
+              }
+              if (doc.memoryCard?.showPhoto !== undefined) {
+                setShowPhoto(doc.memoryCard.showPhoto);
+              }
+            }
+          } catch (err) {
+            console.error("Failed to fetch legacy journal entry for Studio:", err);
+          }
         }
       }
     }
@@ -153,17 +221,26 @@ export function StudioClient() {
       ctx.fillStyle = themeColors.line;
       ctx.fillRect(100, textTop + 130, 140, 8);
 
-      // 6. Wrapped Reflection / Quote
+      // 6. Wrapped Metaphorical Lesson
       ctx.fillStyle = themeColors.text;
-      ctx.font = "italic 40px Georgia, serif";
       const quoteText = `"${reflection || cardData.quote}"`;
+
+      let fontSize = 40;
+      let lineHeight = 64;
+      if (quoteText.length > 160) {
+        fontSize = 32;
+        lineHeight = 48;
+      } else if (quoteText.length > 100) {
+        fontSize = 36;
+        lineHeight = 54;
+      }
+      ctx.font = `italic ${fontSize}px Georgia, serif`;
 
       // Word wrapping helper
       const maxTextWidth = width - 200;
       const words = quoteText.split(" ");
       let line = "";
       let y = textTop + 220;
-      const lineHeight = 64;
 
       for (let n = 0; n < words.length; n++) {
         const testLine = line + words[n] + " ";
@@ -178,12 +255,14 @@ export function StudioClient() {
       }
       ctx.fillText(line, 100, y);
 
-      // 7. Footer: Date & Touch Grass Tag
+      // 7. Footer: Date & Nature Link Tag
       ctx.fillStyle = themeColors.subtext;
       ctx.font = "500 28px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
       const dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
       ctx.fillText(dateStr, 100, height - 90);
-      ctx.fillText("#TouchGrass", width - 280, height - 90);
+      ctx.textAlign = "right";
+      ctx.fillText("An AI to link you to nature", width - 100, height - 90);
+      ctx.textAlign = "left";
 
       // 8. Download PNG
       const dataUrl = canvas.toDataURL("image/png");
@@ -267,7 +346,7 @@ export function StudioClient() {
 
           {/* Reflection Edit */}
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-[#294B36]">Your Reflection / Quote</label>
+            <label className="text-xs font-bold uppercase tracking-wider text-[#294B36]">Metaphorical Lesson</label>
             <textarea
               value={reflection}
               onChange={(e) => setReflection(e.target.value)}

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedUserId, verifyCsrfOrigin } from "@/lib/server/auth";
 import { analyzeImageWithAI } from "@/lib/server/ai";
 import { searchINaturalist } from "@/lib/server/inaturalist";
-import { uploadImageBuffer, cleanupLocalFile } from "@/lib/server/storage";
+import { getDb } from "@/lib/server/mongodb";
+import { getDailyQuest, evaluateQuestMatch } from "@/lib/server/quests";
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_IMAGE_SIZE_MB = parseInt(process.env.AI_MAX_IMAGE_SIZE_MB || "8", 10);
@@ -19,8 +20,6 @@ export async function POST(request: Request) {
   if (!userId) {
     return NextResponse.json({ success: false, error: { code: "UNAUTHORIZED", message: "Not authenticated" } }, { status: 401 });
   }
-
-  let savedImage: { key: string; url: string } | null = null;
 
   try {
     // 3. Parse FormData
@@ -47,27 +46,8 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await image.arrayBuffer());
     
-    // Save image locally (or configured provider)
-    try {
-      savedImage = await uploadImageBuffer(buffer, image.type, "discoveries");
-    } catch (uploadError) {
-      return NextResponse.json({
-        success: false,
-        error: { code: "BAD_REQUEST", message: (uploadError as Error).message }
-      }, { status: 400 });
-    }
-
-    // 5. Call AI Provider
-    let analysis;
-    try {
-      analysis = await analyzeImageWithAI(buffer, image.type, description || undefined);
-    } catch (aiError) {
-      // Clean up orphaned file if AI analysis fails
-      if (savedImage?.url) {
-        await cleanupLocalFile(savedImage.url);
-      }
-      throw aiError;
-    }
+    // 5. Call AI Provider with in-memory buffer (No server filesystem storage)
+    const analysis = await analyzeImageWithAI(buffer, image.type, description || undefined);
 
     // 6. Search iNaturalist for references if we have a candidate name
     let references: unknown[] = [];
@@ -81,12 +61,37 @@ export async function POST(request: Request) {
       }
     }
 
+    // 7. Evaluate Today's Nature Quest Match
+    const category = (formData.get("category") as string) || "plant";
+    const todayQuest = await getDailyQuest();
+    const questMatch = await evaluateQuestMatch(todayQuest, analysis, { category, description: description || "" });
+
+    // 8. Calculate XP: 50 base XP + quest bonus if matched (70-100%)
+    let xpAwarded = 50;
+    if (questMatch.matched) {
+      xpAwarded += questMatch.bonusXp;
+    }
+
+    // 9. Update user XP on cloud account without persisting local discoveries to server
+    if (userId) {
+      try {
+        const db = await getDb();
+        await db.collection("users").updateOne(
+          { _id: userId },
+          { $inc: { xp: xpAwarded, discoveriesCount: 1 }, $set: { updatedAt: new Date() } }
+        );
+      } catch (dbErr) {
+        console.warn("Failed to increment user XP:", dbErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         analysis,
         references,
-        image: savedImage
+        questMatch,
+        xpAwarded,
       }
     });
 
@@ -110,6 +115,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: { code: "NOT_IMPLEMENTED", message: "AI provider is not configured properly." } }, { status: 501 });
     }
 
-    return NextResponse.json({ success: false, error: { code: "INTERNAL_ERROR", message: "Failed to analyze image." } }, { status: 500 });
+    return NextResponse.json({ success: false, error: { code: "INTERNAL_ERROR", message: message || "Failed to analyze image." } }, { status: 500 });
   }
 }

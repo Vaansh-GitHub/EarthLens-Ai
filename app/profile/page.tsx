@@ -5,6 +5,7 @@ import { UserCircle, Settings, Award, Calendar } from "lucide-react";
 import { LogoutButton } from "@/components/LogoutButton";
 import { Suspense } from "react";
 import { calculateUserProgression } from "@/lib/server/progression";
+import { ProfileAchievementsClient } from "@/components/ProfileAchievementsClient";
 import Link from "next/link";
 
 async function ProfileContent() {
@@ -22,7 +23,10 @@ async function ProfileContent() {
   }
 
   // Fetch actual discoveries count for this user
-  const discoveryCount = await db.collection("discoveries").countDocuments({ userId });
+  const mongoCount = await db.collection("discoveries").countDocuments({ userId });
+  const userCount = typeof user.discoveriesCount === "number" ? user.discoveriesCount : 0;
+  const inferredCount = user.xp && user.xp >= 50 ? Math.floor(user.xp / 50) : 0;
+  const discoveryCount = Math.max(mongoCount, userCount, inferredCount);
   const progression = calculateUserProgression(user.xp, discoveryCount);
 
   const memberSince = user.createdAt 
@@ -69,55 +73,11 @@ async function ProfileContent() {
 
         {/* Real Achievements & Stats */}
         <div className="flex flex-col gap-6">
-          <div className="bg-white p-6 md:p-8 rounded-3xl border border-[#DCE5D8] shadow-xs flex flex-col gap-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-[#1E3526] font-bold text-base">
-                <Award className="w-5 h-5 text-[#3E6548]" />
-                Achievements
-              </div>
-              <span className="text-xs font-semibold text-[#5F7363]">
-                {progression.totalXp} Total XP
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Link 
-                href="/journal"
-                className="p-4 bg-[#F5F8F1] hover:bg-[#E4EEDF]/60 transition-colors rounded-2xl border border-[#DCE5D8] text-center flex flex-col items-center justify-center group"
-              >
-                <div className="text-3xl font-extrabold text-[#294B36]">{discoveryCount}</div>
-                <div className="text-[11px] text-[#5F7363] font-semibold uppercase tracking-wider mt-1 group-hover:text-[#1E3526]">
-                  Discoveries
-                </div>
-              </Link>
-              
-              <div className="p-4 bg-[#F5F8F1] rounded-2xl border border-[#DCE5D8] text-center flex flex-col items-center justify-center">
-                <div className="text-2xl font-extrabold text-[#294B36]">
-                  Level {progression.level}
-                </div>
-                <div className="text-[11px] text-[#5F7363] font-semibold uppercase tracking-wider mt-1">
-                  {progression.rankTitle}
-                </div>
-              </div>
-            </div>
-
-            {/* Level progress bar */}
-            <div className="flex flex-col gap-1.5 pt-2 border-t border-[#DCE5D8]">
-              <div className="flex justify-between text-xs font-medium text-[#5F7363]">
-                <span>Progress to Level {progression.level + 1}</span>
-                <span>{progression.currentLevelXp} / {progression.nextLevelXp} XP</span>
-              </div>
-              <div className="w-full bg-[#E4EEDF] h-2 rounded-full overflow-hidden">
-                <div 
-                  className="bg-[#294B36] h-full rounded-full transition-all duration-500"
-                  style={{ width: `${(progression.currentLevelXp / progression.nextLevelXp) * 100}%` }}
-                />
-              </div>
-              <p className="text-[11px] text-[#5F7363] text-right">
-                {progression.neededXp} XP needed for next level
-              </p>
-            </div>
-          </div>
+          <ProfileAchievementsClient
+            initialCount={discoveryCount}
+            userXp={user.xp ?? 0}
+            initialProgression={progression}
+          />
 
           <div className="bg-white p-6 rounded-3xl border border-[#DCE5D8] shadow-xs flex flex-col gap-3">
             <div className="flex items-center gap-2 text-[#1E3526] font-bold text-sm">

@@ -23,8 +23,13 @@ export function JournalGrid({ entries }: JournalGridProps) {
   const [activeCategory, setActiveCategory] = useState("All");
 
   const filteredEntries = entries.filter(entry => {
-    const matchesSearch = entry.title.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = activeCategory === "All" || entry.category === activeCategory;
+    const q = searchQuery.trim().toLowerCase();
+    const matchesSearch = !q || 
+      (entry.title && entry.title.toLowerCase().includes(q)) || 
+      (entry.category && entry.category.toLowerCase().includes(q));
+    const matchesCategory = 
+      activeCategory === "All" || 
+      (entry.category || "").toLowerCase() === activeCategory.toLowerCase();
     return matchesSearch && matchesCategory;
   });
 

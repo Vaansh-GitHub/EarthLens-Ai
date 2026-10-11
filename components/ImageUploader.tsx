@@ -12,14 +12,74 @@ export function ImageUploader({ onImageSelected }: ImageUploaderProps) {
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
       setPreview(url);
-      onImageSelected(url, file);
+      
+      // Optimize large photos to speed up AI transmission
+      const optimizedFile = await resizeImageIfNeeded(file);
+      onImageSelected(url, optimizedFile);
     }
   };
+
+async function resizeImageIfNeeded(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) return file;
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const maxDim = 1200;
+      let { width, height } = img;
+      if (width <= maxDim && height <= maxDim && file.size < 800 * 1024) {
+        resolve(file);
+        return;
+      }
+      if (width > height) {
+        if (width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        }
+      } else {
+        if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(file);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            resolve(file);
+            return;
+          }
+          const resizedFile = new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), {
+            type: "image/jpeg",
+            lastModified: Date.now(),
+          });
+          resolve(resizedFile);
+        },
+        "image/jpeg",
+        0.85
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(file);
+    };
+    img.src = url;
+  });
+}
 
   const handleClear = () => {
     setPreview(null);

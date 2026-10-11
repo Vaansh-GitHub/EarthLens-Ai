@@ -29,26 +29,47 @@ export async function analyzeImageWithAI(imageBuffer: Buffer, mimeType: string, 
   }
 
   const systemPrompt = `You are EarthLens AI, an expert naturalist and philosophical guide.
-Analyze the provided image carefully. Do not invent certainty, scientific facts, or names if you are unsure. If the image is unclear, state that it is inconclusive in your reasoning and use null for names. Clearly distinguish factual information from metaphorical interpretation.
-Return your response STRICTLY as a JSON object matching this schema exactly (no markdown formatting, no code blocks, just raw JSON):
+PRIMARY DIRECTIVE: Rely strictly on what you visually see in the image pixels. User-selected categories (e.g. "other", "insect", "animal", etc.) or user field notes are subjective remarks and may be mistaken, playful, or contradictory (e.g. user selected "animal" or "other" for a Venus flytrap or plant). NEVER let user notes override what you visually see. Always identify the true specimen from the visual evidence in the image.
+
+Analyze the image carefully and identify the organism accurately based on visual traits.
+Provide:
+1. Accurate common name (e.g. "Venus Flytrap", "Monarch Butterfly", "Silver Birch") and scientific name.
+2. Confidence ("High" or "Medium" based on visual clarity).
+3. Observable visual traits (e.g. trap lobes, hairs, leaf shape, coloration).
+4. Up to 3 concise, factual nature facts about this specific organism.
+5. Ecological role and environmental niche.
+6. A notable biological adaptation or characteristic.
+7. A profound metaphorical life lesson inspired by this organism's natural traits.
+8. A memorable, inspirational quote tailored directly to this organism's qualities.
+9. A thought-provoking reflection question for the outdoor explorer.
+
+CRITICAL INSTRUCTIONS:
+1. Output MUST be a strictly valid JSON object matching this schema.
+2. Do NOT wrap in markdown or backticks.
+3. Do NOT include unescaped quotes inside string values.
+4. Output must start with { and end with }.
+5. Never return generic statements like "The image does not provide any factual information". Always give genuine naturalist and ecological analysis for the specimen shown.
+
+Schema:
 {
-  "candidateCommonName": string | null,
-  "candidateScientificName": string | null,
+  "candidateCommonName": "Name of specimen",
+  "candidateScientificName": "Scientific name or null",
   "confidence": "High" | "Medium" | "Low",
-  "uncertaintyReasoning": string,
-  "visualCharacteristics": string[],
-  "facts": string[],
-  "ecologicalImportance": string | null,
-  "naturalCharacteristic": string | null,
-  "metaphoricalLesson": string | null,
-  "quote": string | null,
-  "reflectionQuestion": string | null,
-  "searchTerms": string[]
+  "uncertaintyReasoning": "Explanation of visible features confirming identification",
+  "visualCharacteristics": ["trait 1", "trait 2"],
+  "facts": ["fact 1", "fact 2", "fact 3"],
+  "ecologicalImportance": "Ecological role and niche",
+  "naturalCharacteristic": "Biological feature or adaptation",
+  "metaphoricalLesson": "Philosophical lesson inspired by this species",
+  "quote": "Inspiring quote tailored to this species",
+  "reflectionQuestion": "Thought-provoking question",
+  "searchTerms": ["term 1", "term 2"]
 }`;
 
-  const promptContent = userNotes 
-    ? `User provided field notes: "${userNotes}". Analyze the image and provide the JSON.` 
-    : "Analyze the image and provide the JSON.";
+  let promptContent = "Analyze the visual evidence in the image and provide the JSON object now.";
+  if (userNotes && userNotes.trim()) {
+    promptContent += ` (User note for context only: "${userNotes.trim()}". Remember: visual image pixels are the sole ground truth).`;
+  }
 
   // Cloudflare Workers AI Vision model payload (uses prompt + image byte array)
   const payload = {
@@ -75,10 +96,10 @@ Return your response STRICTLY as a JSON object matching this schema exactly (no 
     });
 
     // Handle Cloudflare model agreement requirement if encountered
-    if (!response.ok && response.status === 403) {
+    if (!response.ok && (response.status === 403 || response.status === 400)) {
       const errClone = response.clone();
       const errText = await errClone.text();
-      if (errText.includes("Model Agreement") || errText.includes("5016")) {
+      if (errText.includes("Model Agreement") || errText.includes("5016") || errText.includes("agree")) {
         await fetch(endpointUrl, {
           method: "POST",
           headers: {
@@ -103,20 +124,22 @@ Return your response STRICTLY as a JSON object matching this schema exactly (no 
       if (response.status === 429) {
         throw new Error("AI provider rate limit exceeded");
       }
-      throw new Error(`AI provider error: ${response.status} ${response.statusText}`);
+      const errText = await response.text().catch(() => "");
+      throw new Error(`AI provider error: ${response.status} ${response.statusText} ${errText}`.trim());
     }
 
     const data = await response.json();
     
     // Cloudflare returns { result: { response: ... } } or { response: ... }
-    const rawResponse = data.result?.response || data.response;
+    const rawResponse = data.result?.response ?? data.response;
     if (!rawResponse) {
       throw new Error("Invalid response format from AI provider");
     }
 
-    let parsedData: unknown;
+    let parsedData: Record<string, unknown> | null = null;
+    
     if (typeof rawResponse === "object" && rawResponse !== null) {
-      parsedData = rawResponse;
+      parsedData = rawResponse as Record<string, unknown>;
     } else if (typeof rawResponse === "string") {
       let jsonString = rawResponse.trim();
       if (jsonString.startsWith("```json")) {
@@ -124,16 +147,27 @@ Return your response STRICTLY as a JSON object matching this schema exactly (no 
       } else if (jsonString.startsWith("```")) {
         jsonString = jsonString.slice(3, -3).trim();
       }
+      
       const match = jsonString.match(/\{[\s\S]*\}/);
       if (match) {
         jsonString = match[0];
       }
-      parsedData = JSON.parse(jsonString);
-    } else {
+
+      try {
+        parsedData = JSON.parse(jsonString);
+      } catch {
+        // Fallback: extract fields from markdown or text output
+        parsedData = extractFromText(rawResponse);
+      }
+    }
+
+    if (!parsedData) {
       throw new Error("AI provider returned unparseable output");
     }
 
-    const validatedData = AnalysisResultSchema.parse(parsedData);
+    // Normalize and clean fields before schema validation
+    const cleaned = normalizeAnalysisData(parsedData);
+    const validatedData = AnalysisResultSchema.parse(cleaned);
     return validatedData;
 
   } catch (error) {
@@ -148,4 +182,105 @@ Return your response STRICTLY as a JSON object matching this schema exactly (no 
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function cleanString(val: unknown): string | null {
+  if (typeof val !== "string") return null;
+  const trimmed = val.trim();
+  if (!trimmed || ["null", "none", "n/a", "undefined", "unknown"].includes(trimmed.toLowerCase())) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeAnalysisData(data: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = { ...data };
+
+  if ("candidateCommonName" in data) {
+    normalized.candidateCommonName = cleanString(data.candidateCommonName);
+  }
+  if ("candidateScientificName" in data) {
+    normalized.candidateScientificName = cleanString(data.candidateScientificName);
+  }
+  
+  if (typeof data.confidence === "string") {
+    const c = data.confidence.trim().toLowerCase();
+    if (c === "high") normalized.confidence = "High";
+    else if (c === "low") normalized.confidence = "Low";
+    else if (c === "medium") normalized.confidence = "Medium";
+  }
+
+  if (typeof data.uncertaintyReasoning === "string") {
+    normalized.uncertaintyReasoning = cleanString(data.uncertaintyReasoning) ?? data.uncertaintyReasoning;
+  }
+
+  if ("visualCharacteristics" in data) {
+    if (Array.isArray(data.visualCharacteristics)) {
+      normalized.visualCharacteristics = data.visualCharacteristics.map((x) => String(x).trim()).filter(Boolean);
+    }
+  }
+
+  if ("facts" in data) {
+    if (Array.isArray(data.facts)) {
+      normalized.facts = data.facts.map((x) => String(x).trim()).filter(Boolean).slice(0, 3);
+    }
+  }
+
+  if ("ecologicalImportance" in data) {
+    normalized.ecologicalImportance = cleanString(data.ecologicalImportance);
+  }
+  if ("naturalCharacteristic" in data) {
+    normalized.naturalCharacteristic = cleanString(data.naturalCharacteristic);
+  }
+  if ("metaphoricalLesson" in data) {
+    normalized.metaphoricalLesson = cleanString(data.metaphoricalLesson);
+  }
+  if ("quote" in data) {
+    normalized.quote = cleanString(data.quote);
+  }
+  if ("reflectionQuestion" in data) {
+    normalized.reflectionQuestion = cleanString(data.reflectionQuestion);
+  }
+  if ("safetyNote" in data) {
+    normalized.safetyNote = cleanString(data.safetyNote);
+  }
+  if ("searchTerms" in data) {
+    if (Array.isArray(data.searchTerms)) {
+      normalized.searchTerms = data.searchTerms.map((x) => String(x).trim()).filter(Boolean);
+    }
+  }
+
+  return normalized;
+}
+
+function extractFromText(text: string): Record<string, unknown> {
+  const getSection = (titleRegex: RegExp): string | null => {
+    const match = text.match(titleRegex);
+    return match ? match[1].trim() : null;
+  };
+
+  const nameMatch = text.match(/(?:specimen|plant|animal|species|candidate):\s*([^\n.]+)/i) ||
+                    text.match(/\*\*(?:Common Name|Candidate)\*\*[:\s]*([^\n]+)/i);
+
+  const visualSection = getSection(/\*\*(?:Visual Characteristics|Visuals)\*\*[:\s]*([\s\S]*?)(?=\n\*\*|$)/i);
+  const factsSection = getSection(/\*\*(?:Facts|Nature Facts)\*\*[:\s]*([\s\S]*?)(?=\n\*\*|$)/i);
+  const ecoSection = getSection(/\*\*(?:Ecological Importance|Ecology)\*\*[:\s]*([\s\S]*?)(?=\n\*\*|$)/i);
+  const lessonSection = getSection(/\*\*(?:Metaphorical Lesson|Lesson)\*\*[:\s]*([\s\S]*?)(?=\n\*\*|$)/i);
+  const quoteSection = getSection(/\*\*(?:Quote)\*\*[:\s]*([\s\S]*?)(?=\n\*\*|$)/i);
+  const questionSection = getSection(/\*\*(?:Reflection Question|Reflection)\*\*[:\s]*([\s\S]*?)(?=\n\*\*|$)/i);
+
+  return {
+    candidateCommonName: nameMatch ? nameMatch[1].replace(/[*_]/g, "").trim() : null,
+    candidateScientificName: null,
+    confidence: "Medium",
+    uncertaintyReasoning: "Extracted from naturalist analysis.",
+    visualCharacteristics: visualSection ? visualSection.split("\n").filter((l) => l.trim()) : [],
+    facts: factsSection ? factsSection.split("\n").filter((l) => l.trim()) : [],
+    ecologicalImportance: ecoSection,
+    naturalCharacteristic: null,
+    metaphoricalLesson: lessonSection,
+    quote: quoteSection,
+    reflectionQuestion: questionSection,
+    searchTerms: nameMatch ? [nameMatch[1].trim()] : ["botany", "nature"]
+  };
 }
