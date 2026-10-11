@@ -34,7 +34,7 @@ export function ProfileAchievementsClient({
         const localDiscoveries = await getAllDiscoveries();
         if (!isMounted) return;
 
-        const effectiveCount = Math.max(initialCount, localDiscoveries.length);
+        const effectiveCount = localDiscoveries.length;
         setDiscoveryCount(effectiveCount);
 
         // Recalculate progression dynamically
@@ -64,8 +64,8 @@ export function ProfileAchievementsClient({
           rankTitle,
         });
 
-        // Sync with server if local count is different from server's stored count
-        if (localDiscoveries.length > 0 && localDiscoveries.length !== initialCount) {
+        // Sync with server whenever local count differs from server's stored count (including 0 upon deletion)
+        if (effectiveCount !== initialCount) {
           fetch("/api/user/sync", {
             method: "POST",
             headers: { "Content-Type": "application/json" },

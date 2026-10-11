@@ -24,9 +24,14 @@ async function ProfileContent() {
 
   // Fetch actual discoveries count for this user
   const mongoCount = await db.collection("discoveries").countDocuments({ userId });
-  const userCount = typeof user.discoveriesCount === "number" ? user.discoveriesCount : 0;
-  const inferredCount = user.xp && user.xp >= 50 ? Math.floor(user.xp / 50) : 0;
-  const discoveryCount = Math.max(mongoCount, userCount, inferredCount);
+  let discoveryCount = 0;
+  if (typeof user.discoveriesCount === "number") {
+    discoveryCount = Math.max(mongoCount, user.discoveriesCount);
+  } else if (mongoCount > 0) {
+    discoveryCount = mongoCount;
+  } else if (user.xp && user.xp >= 50) {
+    discoveryCount = Math.floor(user.xp / 50);
+  }
   const progression = calculateUserProgression(user.xp, discoveryCount);
 
   const memberSince = user.createdAt 
