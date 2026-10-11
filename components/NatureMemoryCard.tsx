@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import { FormattedText } from "@/components/FormattedText";
+import { Leaf } from "lucide-react";
 
 interface NatureMemoryCardProps {
   image: string;
@@ -35,7 +36,16 @@ export function NatureMemoryCard({
     <div className={`w-full max-w-sm mx-auto min-h-[540px] flex flex-col rounded-3xl overflow-hidden shadow-xl border ${styles[styleVariant]} transition-colors duration-500`}>
       {showPhoto && (
         <div className="h-48 sm:h-52 w-full relative shrink-0">
-          <img src={image} alt={title} className="w-full h-full object-cover" />
+          {image ? (
+            <img src={image} alt={title} className="w-full h-full object-cover" />
+          ) : (
+            <div className={`w-full h-full flex items-center justify-center ${
+              styleVariant === "light" ? "bg-[#E4EEDF]" : 
+              styleVariant === "dark" ? "bg-[#16271F]" : "bg-[#9A7350]"
+            }`}>
+              <Leaf className="w-12 h-12 opacity-30" />
+            </div>
+          )}
           <div className={`absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t to-transparent ${
             styleVariant === "light" ? "from-[#FDFBF7]" : 
             styleVariant === "dark" ? "from-[#1E3329]" : "from-[#B58D67]"

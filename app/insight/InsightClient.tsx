@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { 
   ArrowLeft, CheckCircle2, Leaf, Globe, Sparkles, BookOpen, Share2, 
-  BookmarkPlus, Trash2, Edit3, X, Save, Code, Copy, Check 
+  BookmarkPlus, Trash2, Edit3, X, Save, Code, Copy, Check, AlertTriangle 
 } from "lucide-react";
 import { InsightSection } from "@/components/InsightSection";
 import { QuestCard } from "@/components/QuestCard";
@@ -19,6 +19,7 @@ import {
   getDiscoveryById, 
   updateDiscovery, 
   deleteDiscovery,
+  clearDraftDiscovery,
   getAllDiscoveries,
   type LocalDiscovery,
   type IdentificationContract,
@@ -54,58 +55,16 @@ export interface InsightData {
   detectedMood: string | null;
 }
 
-const FALLBACK_INSIGHT: InsightData = {
-  possibleIdentification: {
-    commonName: "Field Specimen",
-    scientificName: null,
-    confidence: 85,
-    identificationNotes: "Documented in outdoor natural environment."
-  },
-  visibleEvidence: [
-    { observation: "Natural biological subject documented in the field", significance: "Diagnostic photographic feature" }
-  ],
-  natureFacts: [
-    { title: "Habitat Adaptation", detail: "Exhibits specialized anatomical characteristics suited to local microclimate.", evidenceType: "established_fact" }
-  ],
-  ecologicalRole: {
-    title: "Ecosystem Contribution",
-    description: "Actively participates in local biodiversity and natural cycles.",
-    ecologicalNeed: "Preservation of undisturbed natural habitat.",
-    conservationNote: null
-  },
-  wisdomAndReflection: {
-    theme: "Observation of Nature",
-    quote: "In observing the living world around us, we discover our own capacity for quiet renewal.",
-    lifeConnection: "Taking time to observe the natural world offers valuable perspective on human growth and patience.",
-    toneUsed: "Peaceful",
-    imageConnection: "natural field setting"
-  },
-  reflection: {
-    question: "What visible detail in this scene surprised you most?",
-    journalPrompt: "Record what visible aspect of this observation stood out most to you."
-  },
-  safetyNote: null,
-
-  name: "Field Specimen",
-  scientificName: "",
-  confidence: "High",
-  image: "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&q=80&w=800",
-  facts: ["Exhibits specialized anatomical characteristics suited to local microclimate."],
-  ecologicalImportance: "Actively participates in local biodiversity and natural cycles.",
-  ecologicalNeed: "Preservation of undisturbed natural habitat.",
-  characteristic: "Observation of Nature",
-  lifeLesson: "Taking time to observe the natural world offers valuable perspective on human growth and patience.",
-  quote: "In observing the living world around us, we discover our own capacity for quiet renewal.",
-  reflectionQuestion: "What visible detail in this scene surprised you most?",
-  detectedMood: "Peaceful",
-};
-
 export function InsightClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const id = searchParams.get("id");
   
-  const [data, setData] = useState<InsightData>(FALLBACK_INSIGHT);
+  const [data, setData] = useState<InsightData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const savedSuccessRef = useRef(false);
+
   const [localDiscovery, setLocalDiscovery] = useState<LocalDiscovery | null>(null);
   const [rawContractJson, setRawContractJson] = useState<Record<string, unknown> | null>(null);
   const [dailyQuest, setDailyQuest] = useState<{ title: string; description: string; reward: number; date: string } | null>(null);
@@ -144,6 +103,18 @@ export function InsightClient() {
   // Track created object URL for memory cleanup
   const objectUrlRef = useRef<string | null>(null);
 
+  // Automatically delete unsaved draft from DB if user navigates away without saving
+  useEffect(() => {
+    return () => {
+      if (id === "new" && !savedSuccessRef.current) {
+        clearDraftDiscovery().catch(() => {});
+        if (typeof window !== "undefined") {
+          sessionStorage.removeItem("earthlens_current_discovery");
+        }
+      }
+    };
+  }, [id]);
+
   useEffect(() => {
     return () => {
       if (objectUrlRef.current) {
@@ -158,7 +129,7 @@ export function InsightClient() {
       URL.revokeObjectURL(objectUrlRef.current);
     }
     objectUrlRef.current = url;
-    setData((prev) => ({ ...prev, image: url }));
+    setData((prev) => (prev ? { ...prev, image: url } : null));
   };
 
   const handleCopyJson = () => {
@@ -195,14 +166,15 @@ export function InsightClient() {
       if (id === "new" || !id) {
         try {
           const draft = await getDraftDiscovery();
-          if (draft) {
+          if (draft && draft.analysis) {
             setLocalDiscovery(draft);
             setEditNotes(draft.notes || "");
             setEditCategory(draft.category || "plant");
 
+            let photoUrl = "";
             if (draft.imageBlob) {
-              const url = URL.createObjectURL(draft.imageBlob);
-              setObjectUrl(url);
+              photoUrl = URL.createObjectURL(draft.imageBlob);
+              setObjectUrl(photoUrl);
             }
 
             const clean = sanitizeInsightData(draft.analysis);
@@ -228,11 +200,11 @@ export function InsightClient() {
               }
             }
 
-            setData((prev) => ({
-              ...prev,
+            setData({
               ...clean,
-              image: prev.image,
-            }));
+              image: photoUrl,
+            });
+            setIsLoading(false);
             return;
           }
         } catch (dbErr) {
@@ -244,48 +216,56 @@ export function InsightClient() {
           const stored = typeof window !== "undefined" ? sessionStorage.getItem("earthlens_current_discovery") : null;
           if (stored) {
             const parsed = JSON.parse(stored);
-            const clean = sanitizeInsightData(parsed.analysis);
-            setRawContractJson(parsed.analysis as Record<string, unknown>);
+            if (parsed && parsed.analysis) {
+              const clean = sanitizeInsightData(parsed.analysis);
+              setRawContractJson(parsed.analysis as Record<string, unknown>);
 
-            const qm = parsed.questMatch || clean.questMatch;
-            if (qm) {
-              const scoreNum = qm.questMatchScore ?? qm.score ?? 0;
-              setQuestMatchInfo({
-                matched: scoreNum >= 70,
-                score: scoreNum,
-                bonusXp: scoreNum >= 70 ? (parsed.questMatch?.bonusXp || 50) : 0,
-                reason: qm.matchExplanation || qm.explanation || qm.reason,
-                questMatchScore: scoreNum,
-                questMatchStatus: qm.questMatchStatus || qm.status || (scoreNum >= 90 ? "strong_match" : scoreNum >= 70 ? "partial_match" : "insufficient_match"),
-                matchedRequirements: qm.matchedRequirements || [],
-                missingRequirements: qm.missingRequirements || [],
-                matchExplanation: qm.matchExplanation || qm.explanation || qm.reason,
-                retrySuggestion: qm.retrySuggestion,
+              const qm = parsed.questMatch || clean.questMatch;
+              if (qm) {
+                const scoreNum = qm.questMatchScore ?? qm.score ?? 0;
+                setQuestMatchInfo({
+                  matched: scoreNum >= 70,
+                  score: scoreNum,
+                  bonusXp: scoreNum >= 70 ? (parsed.questMatch?.bonusXp || 50) : 0,
+                  reason: qm.matchExplanation || qm.explanation || qm.reason,
+                  questMatchScore: scoreNum,
+                  questMatchStatus: qm.questMatchStatus || qm.status || (scoreNum >= 90 ? "strong_match" : scoreNum >= 70 ? "partial_match" : "insufficient_match"),
+                  matchedRequirements: qm.matchedRequirements || [],
+                  missingRequirements: qm.missingRequirements || [],
+                  matchExplanation: qm.matchExplanation || qm.explanation || qm.reason,
+                  retrySuggestion: qm.retrySuggestion,
+                });
+                if (scoreNum >= 70) setShowPartyPopper(true);
+              }
+
+              setData({
+                ...clean,
+                image: parsed.imageUrl || "",
               });
-              if (scoreNum >= 70) setShowPartyPopper(true);
+              setIsLoading(false);
+              return;
             }
-
-            setData((prev) => ({
-              ...prev,
-              ...clean,
-              image: parsed.imageUrl || FALLBACK_INSIGHT.image,
-            }));
           }
         } catch (err) {
           console.error("Failed to load discovery from storage:", err);
         }
+
+        setIsLoading(false);
+        setFetchError("Data fetching went wrong. Please try again after some time.");
+        return;
       } else {
         // Saved discovery: Check IndexedDB first
         try {
           const savedDoc = await getDiscoveryById(id);
-          if (savedDoc) {
+          if (savedDoc && savedDoc.analysis) {
             setLocalDiscovery(savedDoc);
             setEditNotes(savedDoc.notes || "");
             setEditCategory(savedDoc.category || "plant");
 
+            let photoUrl = "";
             if (savedDoc.imageBlob) {
-              const url = URL.createObjectURL(savedDoc.imageBlob);
-              setObjectUrl(url);
+              photoUrl = URL.createObjectURL(savedDoc.imageBlob);
+              setObjectUrl(photoUrl);
             }
 
             const clean = sanitizeInsightData(savedDoc.analysis);
@@ -308,11 +288,11 @@ export function InsightClient() {
               });
             }
 
-            setData((prev) => ({
-              ...prev,
+            setData({
               ...clean,
-              image: prev.image,
-            }));
+              image: photoUrl,
+            });
+            setIsLoading(false);
             return;
           }
         } catch (dbErr) {
@@ -324,7 +304,7 @@ export function InsightClient() {
           try {
             const res = await fetch(`/api/journal/${id}`);
             const resJson = await res.json();
-            if (resJson.success && resJson.data) {
+            if (resJson.success && resJson.data && resJson.data.analysis) {
               const doc = resJson.data;
               const clean = sanitizeInsightData(doc.analysis);
               setRawContractJson(doc.analysis as Record<string, unknown>);
@@ -346,21 +326,39 @@ export function InsightClient() {
                 });
               }
 
-              setData((prev) => ({
-                ...prev,
+              setData({
                 ...clean,
-                image: doc.observation?.photoUrl || FALLBACK_INSIGHT.image,
-              }));
+                image: doc.observation?.photoUrl || "",
+              });
+              setIsLoading(false);
+              return;
             }
           } catch (err) {
             console.error("Failed to load discovery from legacy API:", err);
           }
         }
+
+        setIsLoading(false);
+        setFetchError("Data fetching went wrong. Please try again after some time.");
       }
     }
 
     void loadInsightData();
   }, [id]);
+
+  // Discard unsaved discovery & delete from DB immediately
+  const handleDiscardDiscovery = async () => {
+    savedSuccessRef.current = true;
+    try {
+      await clearDraftDiscovery();
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("earthlens_current_discovery");
+      }
+    } catch (e) {
+      console.warn("Error discarding draft discovery:", e);
+    }
+    router.push("/journal");
+  };
 
   // Save to IndexedDB
   const handleSaveToJournal = async () => {
@@ -387,6 +385,11 @@ export function InsightClient() {
 
     try {
       await saveDiscovery(docToSave);
+      savedSuccessRef.current = true;
+      await clearDraftDiscovery().catch(() => {});
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("earthlens_current_discovery");
+      }
 
       try {
         const allLocal = await getAllDiscoveries();
@@ -456,28 +459,86 @@ export function InsightClient() {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex-1 max-w-lg w-full mx-auto p-8 flex flex-col items-center justify-center text-center gap-4 my-auto animate-in fade-in duration-300">
+        <div className="w-16 h-16 rounded-full bg-[#E4EEDF] flex items-center justify-center animate-pulse text-[#294B36]">
+          <Sparkles className="w-8 h-8 animate-spin" />
+        </div>
+        <h2 className="text-xl font-serif font-bold text-[#1E3526]">Examining Field Photograph</h2>
+        <p className="text-sm text-[#5F7363]">
+          Deriving taxonomic identity, observable traits, and nature reflections...
+        </p>
+      </div>
+    );
+  }
+
+  if (fetchError || !data) {
+    return (
+      <div className="flex-1 max-w-md w-full mx-auto p-8 flex flex-col items-center justify-center text-center gap-4 my-auto bg-white rounded-2xl border border-[#E5EAE3] shadow-sm animate-in fade-in duration-300">
+        <div className="w-14 h-14 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
+          <AlertTriangle className="w-7 h-7" />
+        </div>
+        <h2 className="text-xl font-serif font-bold text-[#1E3526]">Data Fetching Failed</h2>
+        <p className="text-sm text-[#5F7363]">
+          {fetchError || "Data fetching went wrong. Please try again after some time."}
+        </p>
+        <Link
+          href="/discover"
+          className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 bg-[#294B36] hover:bg-[#1E3526] text-white rounded-full text-sm font-semibold transition-all shadow-sm cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Discover
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 max-w-3xl w-full mx-auto p-4 md:p-6 lg:p-8 flex flex-col gap-6 animate-in fade-in duration-500">
       
       <header className="flex items-center justify-between flex-wrap gap-3">
-        <Link 
-          href="/journal" 
-          className="inline-flex items-center gap-2 text-[#5F7363] hover:text-[#1E3526] transition-colors text-sm font-semibold"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Field Journal
-        </Link>
+        {id === "new" && !savedSuccess ? (
+          <button 
+            type="button"
+            onClick={handleDiscardDiscovery}
+            className="inline-flex items-center gap-2 text-[#5F7363] hover:text-[#1E3526] transition-colors text-sm font-semibold cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Field Journal
+          </button>
+        ) : (
+          <Link 
+            href="/journal" 
+            className="inline-flex items-center gap-2 text-[#5F7363] hover:text-[#1E3526] transition-colors text-sm font-semibold"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Field Journal
+          </Link>
+        )}
+
         <div className="flex items-center gap-2 flex-wrap">
           {id === "new" && !savedSuccess && (
-            <button
-              type="button"
-              onClick={handleSaveToJournal}
-              disabled={isSaving}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#294B36] hover:bg-[#1E3526] text-white rounded-full text-sm font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
-            >
-              <BookmarkPlus className="w-4 h-4 text-[#D2E3CE]" />
-              <span className="text-white font-bold">{isSaving ? "Saving..." : "Save to Journal"}</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleSaveToJournal}
+                disabled={isSaving}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#294B36] hover:bg-[#1E3526] text-white rounded-full text-sm font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                <BookmarkPlus className="w-4 h-4 text-[#D2E3CE]" />
+                <span className="text-white font-bold">{isSaving ? "Saving..." : "Save to Journal"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDiscardDiscovery}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-red-200 hover:border-red-400 text-red-600 rounded-full text-sm font-semibold transition-all shadow-xs cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4 text-red-500" />
+                <span>Discard Photo</span>
+              </button>
+            </>
           )}
 
           {savedSuccess && (
@@ -614,20 +675,26 @@ export function InsightClient() {
 
       {/* Hero Image & Title (from possibleIdentification) */}
       <div className="relative h-64 md:h-80 w-full rounded-3xl overflow-hidden shadow-md bg-[#E4EEDF]">
-        <img 
-          src={data.image} 
-          alt={data.name} 
-          className="w-full h-full object-cover" 
-        />
+        {data.image ? (
+          <img 
+            src={data.image} 
+            alt={data.name} 
+            className="w-full h-full object-cover" 
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-[#294B36] to-[#1E3526] flex items-center justify-center">
+            <Leaf className="w-16 h-16 text-[#D2E3CE]/30" />
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent flex flex-col justify-end p-6">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#294B36]/80 text-[#D2E3CE] border border-[#D2E3CE]/30 text-xs font-semibold backdrop-blur-md">
               <CheckCircle2 className="w-3 h-3" />
               {data.possibleIdentification?.confidence ?? 85}% Visual Confidence
             </div>
-            {localDiscovery?.category && (
+            {(data.possibleIdentification?.category || localDiscovery?.category) && (
               <span className="px-2.5 py-0.5 rounded-full bg-black/40 text-white/90 text-xs uppercase tracking-wider font-semibold backdrop-blur-md">
-                {localDiscovery.category}
+                {data.possibleIdentification?.category || localDiscovery?.category}
               </span>
             )}
           </div>

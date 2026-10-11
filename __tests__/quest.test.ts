@@ -70,4 +70,44 @@ describe("Daily Quest & Matching Engine", () => {
     expect(result.matched).toBe(false);
     expect(result.bonusXp).toBe(0);
   });
+
+  it("evaluates Turkey Tail Fungus as a strong match for Fungal Fusion quest", async () => {
+    const fungalFusionQuest = {
+      date: "2026-10-11",
+      title: "Fungal Fusion",
+      description: "Find and photograph a unique fungus growing in symbiosis with a tree, highlighting the intricate relationship between the two organisms.",
+      reward: 50,
+    };
+
+    const turkeyTailDiscovery = {
+      possibleIdentification: {
+        commonName: "Turkey Tail Fungus",
+        scientificName: "Trametes versicolor",
+        confidence: 85,
+        identificationNotes: "Identified based on concentric multicolored bands on bracket fungus",
+      },
+      visibleEvidence: [
+        { observation: "Bracket fungus growing on fallen oak tree bark", significance: "Wood decay organism" }
+      ],
+      natureFacts: [
+        { title: "Decomposer", detail: "Turkey tail is a polypore bracket fungus that breaks down dead wood", evidenceType: "established_fact" }
+      ],
+      ecologicalRole: {
+        title: "Nutrient Cycler",
+        description: "Breaks down lignin and wood on dead trees to nourish forest soil",
+        ecologicalNeed: "Deadwood habitat",
+      }
+    };
+
+    const observation = {
+      category: "fungi",
+      description: "Found on a mossy fallen tree trunk in the woods",
+    };
+
+    const result = await evaluateQuestMatch(fungalFusionQuest, turkeyTailDiscovery, observation);
+    expect(result.score).toBeGreaterThanOrEqual(90);
+    expect(result.matched).toBe(true);
+    expect(result.questMatchStatus).toBe("strong_match");
+    expect(result.bonusXp).toBe(50);
+  });
 });

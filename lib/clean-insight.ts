@@ -98,11 +98,13 @@ export function sanitizeInsightData(raw: LocalDiscoveryAnalysis | Record<string,
   let scientificName: string | null = null;
   let confidenceNum = 85;
   let identNotes = "Identified from distinctive visual features.";
+  let category: string | null = null;
 
   if (typeof raw.possibleIdentification === "object" && raw.possibleIdentification !== null) {
     const p = raw.possibleIdentification as Record<string, unknown>;
     commonName = cleanString(p.commonName) || commonName;
     scientificName = cleanString(p.scientificName);
+    category = cleanString(p.category);
     if (typeof p.confidence === "number") confidenceNum = p.confidence;
     identNotes = cleanString(p.identificationNotes) || identNotes;
   } else if (typeof raw.possibleIdentification === "string") {
@@ -277,6 +279,7 @@ export function sanitizeInsightData(raw: LocalDiscoveryAnalysis | Record<string,
     possibleIdentification: {
       commonName,
       scientificName,
+      category,
       confidence: confidenceNum,
       identificationNotes: identNotes,
     },

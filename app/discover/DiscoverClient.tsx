@@ -3,20 +3,21 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { 
-  Sparkles, Leaf, Bird, Bug, Mountain, AlertTriangle, RefreshCw, ExternalLink 
+import {
+  Sparkles, Leaf, Bird, Bug, Mountain, AlertTriangle, RefreshCw, ExternalLink
 } from "lucide-react";
 import { ImageUploader } from "@/components/ImageUploader";
-import { 
-  saveDraftDiscovery, 
-  findDuplicateDiscovery, 
-  deleteDiscovery, 
-  useObjectUrl, 
-  type DuplicateMatch 
+import {
+  saveDraftDiscovery,
+  findDuplicateDiscovery,
+  deleteDiscovery,
+  useObjectUrl,
+  type DuplicateMatch
 } from "@/lib/client/journal-db";
 
 const CATEGORIES = [
   { id: "plant", label: "Plant", icon: Leaf },
+  { id: "fungi", label: "Fungi", icon: Sparkles },
   { id: "animal", label: "Animal", icon: Bird },
   { id: "insect", label: "Insect", icon: Bug },
   { id: "landscape", label: "Landscape", icon: Mountain },
@@ -49,7 +50,7 @@ export function DiscoverClient() {
           window.location.href = "/login";
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Check in the background when user selects an image to provide immediate awareness
@@ -104,13 +105,14 @@ export function DiscoverClient() {
       const json = await res.json();
       if (json.data) {
         const draftId = crypto.randomUUID();
-        
+        const finalCategory = json.data.category || json.data.analysis?.possibleIdentification?.category || category || "plant";
+
         // Save the raw image Blob and analysis to local IndexedDB draft
         await saveDraftDiscovery({
           id: draftId,
           imageBlob: imageFile,
           imageMimeType: imageFile.type,
-          category: category || "plant",
+          category: finalCategory,
           notes: notes || "",
           analysis: json.data.analysis,
           references: json.data.references,
@@ -124,7 +126,7 @@ export function DiscoverClient() {
           id: draftId,
           analysis: json.data.analysis,
           references: json.data.references,
-          category,
+          category: finalCategory,
           notes,
           questMatch: json.data.questMatch,
           xpAwarded: json.data.xpAwarded,
@@ -196,7 +198,7 @@ export function DiscoverClient() {
     try {
       await deleteDiscovery(oldId);
       if (oldId.length === 24) {
-        await fetch(`/api/journal/${oldId}`, { method: "DELETE" }).catch(() => {});
+        await fetch(`/api/journal/${oldId}`, { method: "DELETE" }).catch(() => { });
       }
     } catch (err) {
       console.warn("Failed to delete existing duplicate discovery:", err);
@@ -269,11 +271,10 @@ export function DiscoverClient() {
                       key={cat.id}
                       type="button"
                       onClick={() => setCategory(cat.id)}
-                      className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border transition-all cursor-pointer ${
-                        isSelected 
-                          ? "bg-[#294B36] text-white border-[#294B36] shadow-md ring-2 ring-[#294B36]/20 font-bold" 
+                      className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border transition-all cursor-pointer ${isSelected
+                          ? "bg-[#294B36] text-white border-[#294B36] shadow-md ring-2 ring-[#294B36]/20 font-bold"
                           : "bg-white border-[#DCE5D8] text-[#1E3526] hover:border-[#294B36] hover:bg-[#F5F8F1] font-semibold"
-                      }`}
+                        }`}
                     >
                       <Icon className={`w-6 h-6 ${isSelected ? "text-[#D2E3CE]" : "text-[#3E6548]"}`} />
                       <span className="text-sm">{cat.label}</span>
@@ -301,11 +302,10 @@ export function DiscoverClient() {
               type="button"
               onClick={handleAnalyze}
               disabled={isAnalyzing || isCheckingDuplicate || !category}
-              className={`w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2.5 transition-all shadow-sm mb-8 ${
-                isAnalyzing || isCheckingDuplicate || !category
+              className={`w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2.5 transition-all shadow-sm mb-8 ${isAnalyzing || isCheckingDuplicate || !category
                   ? "bg-[#E4EEDF] text-[#5F7363] border border-[#DCE5D8] cursor-not-allowed shadow-none"
                   : "bg-[#294B36] hover:bg-[#1E3526] active:bg-[#15261b] text-white hover:shadow-lg active:scale-[0.99] cursor-pointer"
-              }`}
+                }`}
             >
               {isAnalyzing ? (
                 <>

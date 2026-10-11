@@ -8,9 +8,30 @@ import type { DailyQuest } from "./quests";
 export const PossibleIdentificationSchema = z.object({
   commonName: z.string().min(1, "Common name is required"),
   scientificName: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
   confidence: z.number().min(0).max(100),
   identificationNotes: z.string().min(1, "Identification notes are required"),
 });
+
+export function inferCategory(commonName: string, notes: string = "", userCategory?: string): string {
+  const text = `${commonName} ${notes}`.toLowerCase();
+  if (/fungus|fungi|mushroom|polypore|trametes|bracket|lichen|puffball|mycelium|toadstool|amanita|mold|spore/i.test(text)) {
+    return "fungi";
+  }
+  if (/bird|sparrow|finch|eagle|hawk|owl|duck|goose|mammal|deer|fox|rabbit|squirrel|bear|wolf|frog|toad|turtle|snake|lizard|fish|crow|robin|cardinal/i.test(text)) {
+    return "animal";
+  }
+  if (/insect|butterfly|moth|bee|wasp|ant|beetle|spider|dragonfly|damselfly|caterpillar|ladybug|grasshopper|cicada|fly/i.test(text)) {
+    return "insect";
+  }
+  if (/flower|sunflower|rose|daisy|orchid|tulip|tree|oak|pine|maple|birch|fern|moss|grass|leaf|plant|bush|shrub|herb|succulent|cactus|flora/i.test(text)) {
+    return "plant";
+  }
+  if (/mountain|lake|river|waterfall|ocean|beach|canyon|valley|glacier|cliff|dune|desert|sunset|sunrise|sky|cloud|landscape|water/i.test(text)) {
+    return "landscape";
+  }
+  return userCategory && userCategory !== "plant" ? userCategory : "plant";
+}
 
 export const QuestMatchContractSchema = z.object({
   score: z.number().min(0).max(100),
@@ -153,7 +174,9 @@ Your purpose is to deeply observe the natural world through photographs, evaluat
 CRITICAL INSTRUCTIONS:
 1. EXAMINE THE PHOTOGRAPH FIRST:
    - Base all conclusions strictly on visible subject morphology, colors, textures, lighting, growth substrate, and habitat context.
-   - Never use placeholder labels like "Observation Specimen" or "Deciduous Tree". Give specific names (e.g. "Turkey Tail Polypore (Trametes versicolor)", "Subalpine Tarn Lake", "White Oak (Quercus alba)").
+   - Identify the genuine, primary wild organism, natural feature, geological formation, or scene visible in the photograph.
+   - Give the precise common name of the specimen or feature (such as the specific flower, tree, bird, mammal, insect, mushroom, rock formation, or landscape). Never use generic placeholders like "Observation Specimen", "Field Specimen", or "Natural Feature".
+   - Provide the binomial scientific name (Genus species) if identifiable, or null if it is a landscape, weather formation, or non-biological feature.
    - If identity is uncertain, state the likely family/genus and explain visual uncertainty in identificationNotes. If the image is a landscape, discuss the landscape and ecosystem rather than forcing a species name.
    - Do not claim symbiosis, mutualism, or species identities without observable evidence.
 
@@ -172,12 +195,7 @@ CRITICAL INSTRUCTIONS:
    - The quote must feel like a thoughtful human reflection inspired by something genuinely observable in this photograph.
    - STRICT BAN ON CLICHÉS:
      * NEVER use "In the quiet persistence of...", "true resilience is born from staying deeply rooted", "patient endurance through changing seasons", or "life does not demand haste".
-     * NEVER borrow unrelated metaphors (e.g. do not mention butterflies for mushrooms).
-     * Connect visible natural phenomena to human experience:
-       - Mountain lakes: stillness, scale, solitude, clarity, contrast between enduring rock and transient ripples.
-       - Deciduous trees: shedding, renewal, branch architecture, vulnerability in bareness, canopy light.
-       - Bracket fungi: decomposition, breaking down what has ended to nourish new beginnings, hidden labor.
-       - Rocks / moss: weathering without breaking, softening hard edges.
+     * Derive the philosophical reflection directly from the specific natural phenomenon, adaptation, or behavior observable in THIS photograph.
    - "lifeConnection" must be a separate readable paragraph explaining the metaphor connecting the photographed natural subject to human life without merely repeating the quote.
    - If user notes are provided, let their tone subtly influence the reflection. If not, derive tone from the visual mood.`;
 
@@ -197,8 +215,9 @@ CRITICAL OUTPUT REQUIREMENT:
 Return EXACTLY ONE valid JSON object matching this schema. No Markdown fences, introductory commentary, or trailing text.
 {
   "possibleIdentification": {
-    "commonName": "Specific organism or natural feature name",
+    "commonName": "Identified common name of the visible specimen or feature",
     "scientificName": "Binomial scientific name or null",
+    "category": "plant" | "animal" | "insect" | "fungi" | "landscape" | "other",
     "confidence": 85,
     "identificationNotes": "Specific visual details supporting identification and any uncertainty"
   },
@@ -294,9 +313,9 @@ Return EXACTLY ONE valid JSON object matching this schema. No Markdown fences, i
 
       const data = await response.json();
       const rawResponse = data.result?.response ??
-                          data.result?.choices?.[0]?.text ??
-                          data.response ??
-                          data.choices?.[0]?.text;
+        data.result?.choices?.[0]?.text ??
+        data.response ??
+        data.choices?.[0]?.text;
 
       if (!rawResponse) throw new Error("Invalid response format from AI provider");
       return typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse);
@@ -649,11 +668,13 @@ function normalizeAnalysisData(
 
   // 8. Safety Note
   const safetyNote = cleanString(data.safetyNote);
+  const identifiedCategory = cleanString((data.possibleIdentification as Record<string, unknown>)?.category) || inferCategory(commonName, identNotes);
 
   return {
     possibleIdentification: {
       commonName,
       scientificName: sciName,
+      category: identifiedCategory,
       confidence: confidenceNum,
       identificationNotes: identNotes,
     },
@@ -709,34 +730,34 @@ function extractFromText(text: string): Record<string, unknown> {
   };
 
   const name = getJsonField("commonName") ||
-               getJsonField("possibleIdentification") ||
-               getJsonField("candidateCommonName") ||
-               getMarkdownSection(/\*\*(?:Common Name|Possible Identification)\*\*[:\s]*([\s\S]*?)(?=\n|\*|$)/i) ||
-               text.match(/(?:specimen|subject|name)[:\s]*([^\n.,"]+)/i)?.[1]?.trim() ||
-               "Nature Specimen";
+    getJsonField("possibleIdentification") ||
+    getJsonField("candidateCommonName") ||
+    getMarkdownSection(/\*\*(?:Common Name|Possible Identification)\*\*[:\s]*([\s\S]*?)(?=\n|\*|$)/i) ||
+    text.match(/(?:specimen|subject|name)[:\s]*([^\n.,"]+)/i)?.[1]?.trim() ||
+    "Nature Specimen";
 
   const quote = getJsonField("quote") ||
-                getJsonField("originalQuote") ||
-                getMarkdownSection(/\*\*(?:Original Quote|Quote)\*\*[:\s]*([\s\S]*?)(?=(?:\n\s*|\s*\*+\s*)\*\*[a-zA-Z]|$)/i) ||
-                text.match(/quote[^:.\n]*(?:is|reflects[^:.\n]*is):\s*\n*["'“]*(?:['"]*)([^"'”\n][^"'”]*?)['"]*["'”]/i)?.[1]?.trim() ||
-                "In observing the living world around us, we discover our own capacity for quiet renewal.";
+    getJsonField("originalQuote") ||
+    getMarkdownSection(/\*\*(?:Original Quote|Quote)\*\*[:\s]*([\s\S]*?)(?=(?:\n\s*|\s*\*+\s*)\*\*[a-zA-Z]|$)/i) ||
+    text.match(/quote[^:.\n]*(?:is|reflects[^:.\n]*is):\s*\n*["'“]*(?:['"]*)([^"'”\n][^"'”]*?)['"]*["'”]/i)?.[1]?.trim() ||
+    "In observing the living world around us, we discover our own capacity for quiet renewal.";
 
   const reflection = getJsonField("lifeConnection") ||
-                     getJsonField("reflection") ||
-                     getJsonField("metaphoricalLesson") ||
-                     getMarkdownSection(/\*\*(?:Life Connection|Reflection|Metaphorical Lesson)\*\*[:\s]*([\s\S]*?)(?=(?:\n\s*|\s*\*+\s*)\*\*[a-zA-Z]|$)/i) ||
-                     `Observing ${name} reveals how organisms find balance within their natural surroundings.`;
+    getJsonField("reflection") ||
+    getJsonField("metaphoricalLesson") ||
+    getMarkdownSection(/\*\*(?:Life Connection|Reflection|Metaphorical Lesson)\*\*[:\s]*([\s\S]*?)(?=(?:\n\s*|\s*\*+\s*)\*\*[a-zA-Z]|$)/i) ||
+    `Observing ${name} reveals how organisms find balance within their natural surroundings.`;
 
   const theme = getJsonField("theme") ||
-                getJsonField("reflectionTheme") ||
-                getMarkdownSection(/\*\*(?:Theme|Reflection Theme)\*\*[:\s]*([\s\S]*?)(?=(?:\n\s*|\s*\*+\s*)\*\*[a-zA-Z]|$)/i) ||
-                `Observation of ${name}`;
+    getJsonField("reflectionTheme") ||
+    getMarkdownSection(/\*\*(?:Theme|Reflection Theme)\*\*[:\s]*([\s\S]*?)(?=(?:\n\s*|\s*\*+\s*)\*\*[a-zA-Z]|$)/i) ||
+    `Observation of ${name}`;
 
   const ecoDesc = getJsonField("description") ||
-                  getJsonField("ecologicalRole") ||
-                  getJsonField("ecologicalImportance") ||
-                  getMarkdownSection(/\*\*(?:Ecological Role|Ecological Importance)\*\*[:\s]*([\s\S]*?)(?=(?:\n\s*|\s*\*+\s*)\*\*[a-zA-Z]|$)/i) ||
-                  `${name} contributes to local biological diversity and ecological stability.`;
+    getJsonField("ecologicalRole") ||
+    getJsonField("ecologicalImportance") ||
+    getMarkdownSection(/\*\*(?:Ecological Role|Ecological Importance)\*\*[:\s]*([\s\S]*?)(?=(?:\n\s*|\s*\*+\s*)\*\*[a-zA-Z]|$)/i) ||
+    `${name} contributes to local biological diversity and ecological stability.`;
 
   return {
     possibleIdentification: {

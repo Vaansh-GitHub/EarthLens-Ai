@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 export interface IdentificationContract {
   commonName: string;
   scientificName?: string | null;
+  category?: string | null;
   confidence: number;
   identificationNotes: string;
 }

@@ -9,10 +9,10 @@ import { getDraftDiscovery, getDiscoveryById } from "@/lib/client/journal-db";
 import { sanitizeInsightData } from "@/lib/clean-insight";
 
 const FALLBACK_DATA = {
-  image: "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&q=80&w=800",
-  title: "Field Discovery",
-  quote: "In observing the living world around us, we discover our own capacity for quiet renewal.",
-  lifeConnection: "Taking time to observe the natural world offers valuable perspective on human growth and patience."
+  image: "",
+  title: "Nature Observation",
+  quote: "Take time to observe living forms in their natural context.",
+  lifeConnection: "Attentive observation reveals deeper resilience and quiet cycles in the living world."
 };
 
 export function StudioClient() {
@@ -69,7 +69,7 @@ export function StudioClient() {
             const q = clean.wisdomAndReflection?.quote || clean.quote;
             const lc = clean.wisdomAndReflection?.lifeConnection || clean.lifeLesson;
             const title = clean.name;
-            let image = FALLBACK_DATA.image;
+            let image = "";
             if (draft.imageBlob) {
               image = updateCardImageBlob(draft.imageBlob);
             }
@@ -87,7 +87,7 @@ export function StudioClient() {
             const q = clean.wisdomAndReflection?.quote || clean.quote;
             const lc = clean.wisdomAndReflection?.lifeConnection || clean.lifeLesson;
             const title = clean.name;
-            const image = parsed.imageUrl || FALLBACK_DATA.image;
+            const image = parsed.imageUrl || "";
 
             setCardData({ image, title, quote: q, lifeConnection: lc });
             setQuote(q);
@@ -107,7 +107,7 @@ export function StudioClient() {
               ? sanitizeInsightData({ quote: localDoc.memoryCard.quote }).quote
               : (clean.wisdomAndReflection?.quote || clean.quote);
             const lc = clean.wisdomAndReflection?.lifeConnection || clean.lifeLesson;
-            let image = FALLBACK_DATA.image;
+            let image = "";
             if (localDoc.imageBlob) {
               image = updateCardImageBlob(localDoc.imageBlob);
             }
@@ -141,7 +141,7 @@ export function StudioClient() {
               const title = clean.name;
               const q = doc.memoryCard?.quote || clean.wisdomAndReflection?.quote || clean.quote;
               const lc = clean.wisdomAndReflection?.lifeConnection || clean.lifeLesson;
-              const image = doc.observation?.photoUrl || FALLBACK_DATA.image;
+              const image = doc.observation?.photoUrl || "";
 
               setCardData({ image, title, quote: q, lifeConnection: lc });
               setQuote(q);

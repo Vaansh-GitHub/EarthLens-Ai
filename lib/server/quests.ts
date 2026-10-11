@@ -73,6 +73,7 @@ function getFallbackQuest(dateKey: string): DailyQuest {
 }
 
 async function generateQuestWithAI(dateKey: string): Promise<DailyQuest | null> {
+  if (process.env.NODE_ENV === "test") return null;
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
   const baseUrl = process.env.CLOUDFLARE_AI_BASE_URL || "https://api.cloudflare.com/client/v4";
@@ -221,125 +222,82 @@ export async function evaluateQuestMatch(
   const baseUrl = process.env.CLOUDFLARE_AI_BASE_URL || "https://api.cloudflare.com/client/v4";
   const modelId = process.env.CLOUDFLARE_AI_MODEL || "@cf/meta/llama-3.2-11b-vision-instruct";
 
-  const commonName = String(analysis?.possibleIdentification || analysis?.candidateCommonName || "").trim();
-  const visualTraits = Array.isArray(analysis?.visibleEvidence)
-    ? analysis.visibleEvidence.map((x) => String(x)).join("; ")
-    : (Array.isArray(analysis?.visualCharacteristics) ? analysis.visualCharacteristics.map((x) => String(x)).join("; ") : "");
-  const facts = Array.isArray(analysis?.natureFacts)
-    ? analysis.natureFacts.map((x) => String(x)).join("; ")
-    : (Array.isArray(analysis?.facts) ? analysis.facts.map((x) => String(x)).join("; ") : "");
-  const ecoRole = String(analysis?.ecologicalRole || analysis?.ecologicalImportance || "").trim();
+  // 1. Extract commonName safely from object or string
+  let commonName = "";
+  if (typeof analysis?.possibleIdentification === "object" && analysis?.possibleIdentification !== null) {
+    const p = analysis.possibleIdentification as Record<string, unknown>;
+    commonName = String(p.commonName || "").trim();
+  } else if (typeof analysis?.possibleIdentification === "string") {
+    commonName = analysis.possibleIdentification.trim();
+  }
+  if (!commonName) {
+    commonName = String(analysis?.candidateCommonName || analysis?.candidateIdentification || "").trim();
+  }
+
+  // 2. Extract visual traits
+  let visualTraits = "";
+  if (Array.isArray(analysis?.visibleEvidence)) {
+    visualTraits = analysis.visibleEvidence
+      .map((x) => (typeof x === "object" && x !== null ? `${(x as Record<string, unknown>).observation || ""} (${(x as Record<string, unknown>).significance || ""})` : String(x)))
+      .filter(Boolean)
+      .join("; ");
+  } else if (Array.isArray(analysis?.visualCharacteristics)) {
+    visualTraits = analysis.visualCharacteristics.map(String).join("; ");
+  }
+
+  // 3. Extract nature facts
+  let facts = "";
+  if (Array.isArray(analysis?.natureFacts)) {
+    facts = analysis.natureFacts
+      .map((x) => (typeof x === "object" && x !== null ? `${(x as Record<string, unknown>).title || ""}: ${(x as Record<string, unknown>).detail || ""}` : String(x)))
+      .filter(Boolean)
+      .join("; ");
+  } else if (Array.isArray(analysis?.facts)) {
+    facts = analysis.facts.map(String).join("; ");
+  }
+
+  // 4. Extract ecological role
+  let ecoRole = "";
+  if (typeof analysis?.ecologicalRole === "object" && analysis?.ecologicalRole !== null) {
+    const e = analysis.ecologicalRole as Record<string, unknown>;
+    ecoRole = `${e.title || ""}: ${e.description || ""} (${e.ecologicalNeed || ""})`.trim();
+  } else if (typeof analysis?.ecologicalRole === "string") {
+    ecoRole = analysis.ecologicalRole.trim();
+  } else {
+    ecoRole = String(analysis?.ecologicalImportance || "").trim();
+  }
+
   const category = String(observation?.category || "").trim();
   const notes = String(observation?.description || "").trim();
 
-  // 1. Try AI evaluation first for accurate semantic judging of requirements
-  if (accountId && apiToken) {
-    try {
-      const endpointUrl = `${baseUrl}/accounts/${accountId}/ai/run/${modelId}`;
-      const prompt = `You are EarthLens AI's Nature Quest Verification Agent.
-Your job is to strictly evaluate whether this photograph discovery satisfies the daily quest requirements.
+  // 1. If vision model already evaluated the quest during image analysis, use its verification
+  if (typeof analysis?.questMatch === "object" && analysis.questMatch !== null) {
+    const qm = analysis.questMatch as Record<string, unknown>;
+    const modelScore = Number(qm.score ?? qm.questMatchScore);
+    if (!isNaN(modelScore) && modelScore >= 70) {
+      const clampedScore = Math.min(100, Math.max(0, Math.round(modelScore)));
+      const status: "strong_match" | "partial_match" | "insufficient_match" = clampedScore >= 90 ? "strong_match" : "partial_match";
+      const matchedReqs = Array.isArray(qm.matchedRequirements) && qm.matchedRequirements.length > 0
+        ? qm.matchedRequirements.map((r) => String(r).trim()).filter(Boolean)
+        : [quest.title];
+      const explanation = String(qm.explanation || qm.matchExplanation || `Visual evidence fulfills the daily quest requirements (${clampedScore}% match).`);
 
-DAILY QUEST:
-Title: "${quest.title}"
-Objective: "${quest.description}"
-
-VISUAL EVIDENCE IN PHOTOGRAPH:
-- Identified Subject: "${commonName || "Unknown"}"
-- Category: "${category}"
-- Visible Traits: "${visualTraits}"
-- Ecological Role: "${ecoRole}"
-- Biological Facts: "${facts}"
-- Field Notes: "${notes}"
-
-VERIFICATION INSTRUCTIONS:
-1. Extract the quest's essential requirements (e.g. specific organism, substrate, habitat, interaction).
-2. Compare the observable visual evidence with each requirement.
-3. Calculate a match score from 0 to 100:
-   - 90–100: Strong visual match; all essential requirements are clearly supported by the evidence.
-   - 70–89: Reasonable match; most requirements are supported, but some details remain uncertain.
-   - Below 70: Insufficient match; key requirements are missing or the image shows an unrelated subject.
-4. Set status:
-   - "strong_match" if score >= 90
-   - "partial_match" if score >= 70 and score < 90
-   - "insufficient_match" if score < 70
-5. If score < 70, provide an encouraging retrySuggestion explaining what the user needs to photograph to satisfy the quest. If >= 70, retrySuggestion should be null.
-
-Return STRICT JSON ONLY matching this format:
-{
-  "questMatchScore": number,
-  "questMatchStatus": "strong_match" | "partial_match" | "insufficient_match",
-  "matchedRequirements": ["Requirement 1 met"],
-  "missingRequirements": ["Requirement 2 missing or unverified"],
-  "matchExplanation": "Concise 1-2 sentence explanation of why this image satisfies or misses the quest",
-  "retrySuggestion": "What to photograph instead or null"
-}`;
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-
-      const res = await fetch(endpointUrl, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ prompt, max_tokens: 350 }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (res.ok) {
-        const data = await res.json();
-        const raw = data.result?.response ?? data.result?.choices?.[0]?.text ?? data.response;
-        if (raw) {
-          const jsonString = typeof raw === "string" ? raw.trim() : JSON.stringify(raw);
-          const match = jsonString.match(/\{[\s\S]*?\}/);
-          if (match) {
-            const parsed = JSON.parse(match[0]);
-            const scoreNum = Number(parsed.questMatchScore ?? parsed.score);
-            if (!isNaN(scoreNum)) {
-              const clampedScore = Math.min(100, Math.max(0, Math.round(scoreNum)));
-              const matched = clampedScore >= 70;
-              let status: "strong_match" | "partial_match" | "insufficient_match" = "insufficient_match";
-              if (clampedScore >= 90) status = "strong_match";
-              else if (clampedScore >= 70) status = "partial_match";
-
-              const matchedReqs = Array.isArray(parsed.matchedRequirements) 
-                ? parsed.matchedRequirements.map((r: unknown) => String(r).trim()).filter(Boolean)
-                : (matched ? [quest.title] : []);
-              const missingReqs = Array.isArray(parsed.missingRequirements)
-                ? parsed.missingRequirements.map((r: unknown) => String(r).trim()).filter(Boolean)
-                : (!matched ? ["Target specimen or interaction required by quest"] : []);
-
-              const explanation = parsed.matchExplanation ? String(parsed.matchExplanation).trim() :
-                (matched ? `Visual evidence satisfies quest criteria (${clampedScore}% match).` : `Visible evidence does not satisfy the quest requirements.`);
-
-              const retry = !matched 
-                ? (parsed.retrySuggestion ? String(parsed.retrySuggestion).trim() : `Try finding and photographing: ${quest.description}`)
-                : null;
-
-              return {
-                score: clampedScore,
-                questMatchScore: clampedScore,
-                questMatchStatus: status,
-                matchedRequirements: matchedReqs,
-                missingRequirements: missingReqs,
-                matchExplanation: explanation,
-                retrySuggestion: retry,
-                matched,
-                bonusXp: matched ? quest.reward : 0,
-                reason: explanation,
-              };
-            }
-          }
-        }
-      }
-    } catch {
-      // Fall through to heuristic evaluation
+      return {
+        score: clampedScore,
+        questMatchScore: clampedScore,
+        questMatchStatus: status,
+        matchedRequirements: matchedReqs,
+        missingRequirements: [],
+        matchExplanation: explanation,
+        retrySuggestion: null,
+        matched: true,
+        bonusXp: quest.reward || 50,
+        reason: explanation,
+      };
     }
   }
 
-  // 2. Intelligent rule-based evaluation fallback
+  // 2. Intelligent, domain-aware heuristic evaluation fallback
   return calculateHeuristicMatch(quest, commonName, visualTraits, facts, ecoRole, category, notes);
 }
 
@@ -360,18 +318,21 @@ function calculateHeuristicMatch(
   const missingRequirements: string[] = [];
 
   // Check organism / subject domains
-  const wantsFungi = /fungus|fungi|mushroom|polypore|bracket|lichen|spore/i.test(questText);
-  const wantsTree = /tree|bark|canopy|wood|branch|stump|log|leaf|leaves/i.test(questText);
-  const wantsFlower = /flower|blossom|bloom|petal|wildflower/i.test(questText);
-  const wantsInsect = /insect|bee|butterfly|pollinator|spider|beetle|ant/i.test(questText);
-  const wantsWater = /water|dew|drop|droplet|lake|stream|river|rain/i.test(questText);
-  const wantsMoss = /moss|lichen|rock|stone/i.test(questText);
-  const wantsSeed = /seed|fruit|burr|pod|pinecone/i.test(questText);
+  const wantsFungi = /fungus|fungi|mushroom|polypore|bracket|lichen|spore|mold|truffle|symbiosis/i.test(questText);
+  const wantsTree = /tree|bark|canopy|wood|branch|stump|log|leaf|leaves|forest|trunk/i.test(questText);
+  const wantsFlower = /flower|blossom|bloom|petal|wildflower|flora/i.test(questText);
+  const wantsInsect = /insect|bee|butterfly|pollinator|spider|beetle|ant|bug|moth|dragonfly/i.test(questText);
+  const wantsBird = /bird|avian|feather|wing|raptor|songbird|waterfowl|beak/i.test(questText);
+  const wantsAnimal = /animal|mammal|wildlife|fauna|creature|critter|fur/i.test(questText);
+  const wantsWater = /water|dew|drop|droplet|lake|stream|river|rain|pond|moisture/i.test(questText);
+  const wantsMoss = /moss|lichen|rock|stone|crevice/i.test(questText);
+  const wantsSeed = /seed|fruit|burr|pod|pinecone|cone|acorn/i.test(questText);
+  const wantsLandscape = /landscape|mountain|ridge|valley|canyon|cliff|vista|horizon|sky|cloud|sunset/i.test(questText);
 
   let targetIdentified = false;
 
   if (wantsFungi) {
-    if (/fungus|fungi|mushroom|polypore|trametes|shelf|bracket|lichen/i.test(discoveryText)) {
+    if (/fungus|fungi|mushroom|polypore|trametes|shelf|bracket|lichen|spore|decay|sapro|mycel/i.test(discoveryText)) {
       matchedRequirements.push("Fungus or mushroom specimen observed");
       targetIdentified = true;
     } else {
@@ -380,7 +341,7 @@ function calculateHeuristicMatch(
   }
 
   if (wantsTree) {
-    if (/tree|bark|trunk|wood|log|stump|branch|forest|canopy|deciduous/i.test(discoveryText)) {
+    if (/tree|bark|trunk|wood|log|stump|branch|forest|canopy|deciduous|conifer|oak|pine/i.test(discoveryText)) {
       matchedRequirements.push("Tree or woody substrate verified");
       targetIdentified = true;
     } else if (!wantsFungi) {
@@ -389,7 +350,7 @@ function calculateHeuristicMatch(
   }
 
   if (wantsFlower) {
-    if (/flower|blossom|bloom|petal|wildflower|flora/i.test(discoveryText)) {
+    if (/flower|blossom|bloom|petal|wildflower|flora|sunflower|daisy|rose/i.test(discoveryText)) {
       matchedRequirements.push("Flowering plant or blossom observed");
       targetIdentified = true;
     } else {
@@ -398,7 +359,7 @@ function calculateHeuristicMatch(
   }
 
   if (wantsInsect) {
-    if (/insect|bee|butterfly|pollinator|spider|bug|beetle|wing/i.test(discoveryText)) {
+    if (/insect|bee|butterfly|pollinator|spider|bug|beetle|wing|ant|moth|dragonfly/i.test(discoveryText)) {
       matchedRequirements.push("Active insect or pollinator documented");
       targetIdentified = true;
     } else {
@@ -406,8 +367,26 @@ function calculateHeuristicMatch(
     }
   }
 
+  if (wantsBird) {
+    if (/bird|avian|finch|sparrow|robin|eagle|hawk|owl|duck|goose|feather|wing|beak|cardinal|crow/i.test(discoveryText)) {
+      matchedRequirements.push("Avian or bird specimen documented");
+      targetIdentified = true;
+    } else {
+      missingRequirements.push("Bird or avian species absent from image");
+    }
+  }
+
+  if (wantsAnimal) {
+    if (/animal|mammal|deer|fox|rabbit|squirrel|bear|wolf|frog|toad|turtle|reptile|amphibian|rodent/i.test(discoveryText)) {
+      matchedRequirements.push("Wild animal or mammal observed");
+      targetIdentified = true;
+    } else if (!wantsBird && !wantsInsect) {
+      missingRequirements.push("Wild animal or mammal absent from image");
+    }
+  }
+
   if (wantsWater) {
-    if (/dew|water|drop|droplet|moisture|lake|reflection|liquid/i.test(discoveryText)) {
+    if (/dew|water|drop|droplet|moisture|lake|reflection|liquid|stream|river/i.test(discoveryText)) {
       matchedRequirements.push("Water droplets or aquatic feature captured");
       targetIdentified = true;
     } else {
@@ -433,23 +412,38 @@ function calculateHeuristicMatch(
     }
   }
 
+  if (wantsLandscape) {
+    if (/mountain|peak|ridge|valley|canyon|cliff|rock|stone|vista|horizon|sky|cloud|landscape|scenic|tarn|lake|geological/i.test(discoveryText)) {
+      matchedRequirements.push("Geological terrain or natural landscape captured");
+      targetIdentified = true;
+    } else {
+      missingRequirements.push("Landscape or terrain feature not visible");
+    }
+  }
+
   // Calculate score based on requirement fulfillment
   let score = 0;
   if (matchedRequirements.length > 0 && missingRequirements.length === 0) {
-    score = 92;
+    score = 94;
   } else if (matchedRequirements.length > 0 && missingRequirements.length > 0) {
-    // Partial match if primary subject is present but secondary aspect is uncertain
-    score = targetIdentified ? 72 : 45;
+    score = targetIdentified ? 78 : 45;
   } else {
     // Count raw keyword overlap
-    const stopWords = new Set(["the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "of", "with", "find", "photograph", "look", "observe", "its", "your", "how", "any"]);
+    const stopWords = new Set(["the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "of", "with", "find", "photograph", "look", "observe", "its", "your", "how", "any", "unique", "growing", "between", "relationship", "specimen", "natural"]);
     const questWords = questText.split(/\s+/).filter((w) => w.length > 3 && !stopWords.has(w));
     let matchedWords = 0;
     for (const w of questWords) {
       if (discoveryText.includes(w)) matchedWords++;
     }
-    score = Math.round((matchedWords / Math.max(questWords.length, 1)) * 60);
-    if (score < 40) {
+    const ratio = matchedWords / Math.max(questWords.length, 1);
+    if (ratio >= 0.4) {
+      score = 85;
+      matchedRequirements.push(`Key quest subjects (${quest.title}) visible in image`);
+    } else if (ratio >= 0.2) {
+      score = 72;
+      matchedRequirements.push(`Observable relation to ${quest.title}`);
+    } else {
+      score = Math.round(ratio * 50);
       missingRequirements.push(`Key quest subject (${quest.title}) not detected in image`);
     }
   }

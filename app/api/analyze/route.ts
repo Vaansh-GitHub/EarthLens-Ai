@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserId, verifyCsrfOrigin } from "@/lib/server/auth";
-import { analyzeImageWithAI } from "@/lib/server/ai";
+import { analyzeImageWithAI, inferCategory } from "@/lib/server/ai";
 import { searchINaturalist } from "@/lib/server/inaturalist";
 import { getDb } from "@/lib/server/mongodb";
 import { getDailyQuest, evaluateQuestMatch } from "@/lib/server/quests";
+
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_IMAGE_SIZE_MB = parseInt(process.env.AI_MAX_IMAGE_SIZE_MB || "8", 10);
@@ -27,7 +30,7 @@ export async function POST(request: Request) {
     const image = formData.get("image") as File | null;
     const notes = formData.get("notes") as string | null;
     const description = formData.get("description") as string | null;
-    
+
     if (!image) {
       return NextResponse.json({ success: false, error: { code: "BAD_REQUEST", message: "No image provided" } }, { status: 400 });
     }
@@ -40,7 +43,7 @@ export async function POST(request: Request) {
     if (!ALLOWED_MIME_TYPES.includes(image.type)) {
       return NextResponse.json({ success: false, error: { code: "BAD_REQUEST", message: "Unsupported image format. Use JPEG, PNG, or WebP." } }, { status: 400 });
     }
-    
+
     if (image.size > MAX_IMAGE_SIZE_BYTES) {
       return NextResponse.json({ success: false, error: { code: "PAYLOAD_TOO_LARGE", message: `Image exceeds the ${MAX_IMAGE_SIZE_MB}MB limit.` } }, { status: 413 });
     }
@@ -60,9 +63,10 @@ export async function POST(request: Request) {
     }
 
     const buffer = Buffer.from(await image.arrayBuffer());
-    
-    // 5. Call AI Provider with in-memory buffer (No server filesystem storage)
-    const analysis = await analyzeImageWithAI(buffer, image.type, userText);
+
+    // 5. Fetch Today's Nature Quest and Call AI Provider with in-memory buffer
+    const todayQuest = await getDailyQuest();
+    const analysis = await analyzeImageWithAI(buffer, image.type, userText, todayQuest);
 
     // 6. Search iNaturalist for references if we have a candidate name
     let references: unknown[] = [];
@@ -76,10 +80,17 @@ export async function POST(request: Request) {
       }
     }
 
-    // 7. Evaluate and Synchronize Today's Nature Quest Match
-    const category = (formData.get("category") as string) || "plant";
-    const todayQuest = await getDailyQuest();
-    const questMatch = await evaluateQuestMatch(todayQuest, analysis, { category, description: userText || "" });
+    // 7. Accurately infer biological category and evaluate quest match
+    const userCategory = (formData.get("category") as string) || "";
+    const identifiedCommon = analysis.possibleIdentification?.commonName || analysis.candidateCommonName || "";
+    const identifiedNotes = analysis.possibleIdentification?.identificationNotes || "";
+    const accurateCategory = analysis.possibleIdentification?.category || inferCategory(identifiedCommon, identifiedNotes, userCategory);
+
+    if (analysis.possibleIdentification) {
+      analysis.possibleIdentification.category = accurateCategory;
+    }
+
+    const questMatch = await evaluateQuestMatch(todayQuest, analysis, { category: accurateCategory, description: userText || "" });
 
     // Synchronize into complete contract
     analysis.questMatch = {
@@ -116,6 +127,7 @@ export async function POST(request: Request) {
         analysis,
         references,
         questMatch,
+        category: accurateCategory,
         xpAwarded,
       }
     });
@@ -123,11 +135,11 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("API Analyze Error:", error);
     const message = (error as Error).message;
-    
+
     if (message.includes("rate limit")) {
       return NextResponse.json({ success: false, error: { code: "RATE_LIMITED", message } }, { status: 429 });
     }
-    
+
     if (message.includes("timed out")) {
       return NextResponse.json({ success: false, error: { code: "GATEWAY_TIMEOUT", message } }, { status: 504 });
     }
