@@ -99,6 +99,13 @@ export function JournalClient() {
   };
 
   useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => {
+        if (!res.ok) {
+          window.location.href = "/login";
+        }
+      })
+      .catch(() => {});
     void reloadEntries();
   }, []);
 

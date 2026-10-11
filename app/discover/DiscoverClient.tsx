@@ -41,6 +41,17 @@ export function DiscoverClient() {
   // Safely generate object URL for existing duplicate thumbnail in modal
   const existingPhotoUrl = useObjectUrl(pendingDuplicate?.existingDiscovery.imageBlob);
 
+  // Ensure user is authenticated
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => {
+        if (!res.ok) {
+          window.location.href = "/login";
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Check in the background when user selects an image to provide immediate awareness
   useEffect(() => {
     let active = true;

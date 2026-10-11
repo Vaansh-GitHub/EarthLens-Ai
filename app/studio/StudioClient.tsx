@@ -47,6 +47,15 @@ export function StudioClient() {
   };
 
   useEffect(() => {
+    // Ensure user is authenticated
+    fetch("/api/auth/me")
+      .then((res) => {
+        if (!res.ok) {
+          window.location.href = "/login";
+        }
+      })
+      .catch(() => {});
+
     async function loadData() {
       if (id === "new" || !id) {
         try {

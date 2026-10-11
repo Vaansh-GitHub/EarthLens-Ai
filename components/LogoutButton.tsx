@@ -14,8 +14,7 @@ export function LogoutButton() {
       await fetch("/api/auth/logout", {
         method: "POST",
       });
-      router.push("/");
-      router.refresh();
+      window.location.href = "/";
     } catch (error) {
       console.error(error);
       setIsLoading(false);

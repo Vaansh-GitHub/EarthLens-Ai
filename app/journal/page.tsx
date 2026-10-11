@@ -1,3 +1,5 @@
+import { getAuthenticatedUserId } from "@/lib/server/auth";
+import { redirect } from "next/navigation";
 import { JournalClient } from "@/components/JournalClient";
 import { Suspense } from "react";
 
@@ -5,6 +7,14 @@ export const metadata = {
   title: "Nature Journal — EarthLens AI",
   description: "Your personal, device-local chronicle of nature discoveries, reflections, and ecological insights.",
 };
+
+async function ProtectedJournal() {
+  const userId = await getAuthenticatedUserId();
+  if (!userId) {
+    redirect("/login");
+  }
+  return <JournalClient />;
+}
 
 export default function JournalPage() {
   return (
@@ -15,7 +25,7 @@ export default function JournalPage() {
         </div>
       }
     >
-      <JournalClient />
+      <ProtectedJournal />
     </Suspense>
   );
 }
