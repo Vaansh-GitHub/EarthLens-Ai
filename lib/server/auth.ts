@@ -82,21 +82,63 @@ export async function getAuthenticatedUserId(): Promise<ObjectId | null> {
 }
 
 /**
- * Validates the Origin or Referer header against the allowed base URL to prevent CSRF.
+ * Validates the Origin or Referer header against the allowed base URL or incoming request host to prevent CSRF.
  * Required for state-changing endpoints (POST, PUT, DELETE) that rely on cookie authentication.
  */
 export function verifyCsrfOrigin(request: Request): boolean {
   const origin = request.headers.get("origin") || request.headers.get("referer");
   if (!origin) {
-    // If no origin/referer is present, block it to be safe
     return false;
   }
-  
-  const baseUrl = process.env.APP_BASE_URL || "http://localhost:3000";
+
   try {
     const originUrl = new URL(origin);
-    const expectedUrl = new URL(baseUrl);
-    return originUrl.origin === expectedUrl.origin;
+    const originHost = originUrl.host.toLowerCase();
+
+    // 1. Direct host & x-forwarded-host match (standard same-origin check for modern proxies & Vercel)
+    const hostHeader = request.headers.get("x-forwarded-host") || request.headers.get("host");
+    if (hostHeader) {
+      const cleanHost = hostHeader.split(",")[0].trim().toLowerCase();
+      if (originHost === cleanHost) {
+        return true;
+      }
+    }
+
+    // 2. Request URL match
+    const requestUrlHost = new URL(request.url).host.toLowerCase();
+    if (originHost === requestUrlHost) {
+      return true;
+    }
+
+    // 3. Configured APP_BASE_URL (if provided)
+    if (process.env.APP_BASE_URL) {
+      try {
+        const baseUrlHost = new URL(process.env.APP_BASE_URL).host.toLowerCase();
+        if (originHost === baseUrlHost) {
+          return true;
+        }
+      } catch {
+        // ignore invalid URL format
+      }
+    }
+
+    // 4. Vercel deployment domains (automatic preview & production URLs)
+    if (process.env.VERCEL_URL && originHost === process.env.VERCEL_URL.toLowerCase()) {
+      return true;
+    }
+    if (process.env.VERCEL_PROJECT_PRODUCTION_URL && originHost === process.env.VERCEL_PROJECT_PRODUCTION_URL.toLowerCase()) {
+      return true;
+    }
+    if (originHost.endsWith(".vercel.app")) {
+      return true;
+    }
+
+    // 5. Localhost fallback for local development
+    if (originHost.startsWith("localhost:") || originHost === "localhost" || originHost.startsWith("127.0.0.1")) {
+      return true;
+    }
+
+    return false;
   } catch {
     return false;
   }
