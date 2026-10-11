@@ -25,6 +25,7 @@ export async function POST(request: Request) {
     // 3. Parse FormData
     const formData = await request.formData();
     const image = formData.get("image") as File | null;
+    const notes = formData.get("notes") as string | null;
     const description = formData.get("description") as string | null;
     
     if (!image) {
@@ -44,10 +45,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: { code: "PAYLOAD_TOO_LARGE", message: `Image exceeds the ${MAX_IMAGE_SIZE_MB}MB limit.` } }, { status: 413 });
     }
 
+    // Extract genuine user text: notes first, or description if not synthetic boilerplate
+    let userText: string | undefined = undefined;
+    if (notes && notes.trim()) {
+      userText = notes.trim();
+    } else if (description && description.trim()) {
+      const trimmed = description.trim();
+      if (trimmed.includes("Notes: ")) {
+        const extracted = trimmed.split("Notes: ")[1]?.trim();
+        if (extracted) userText = extracted;
+      } else if (!trimmed.startsWith("Category:")) {
+        userText = trimmed;
+      }
+    }
+
     const buffer = Buffer.from(await image.arrayBuffer());
     
     // 5. Call AI Provider with in-memory buffer (No server filesystem storage)
-    const analysis = await analyzeImageWithAI(buffer, image.type, description || undefined);
+    const analysis = await analyzeImageWithAI(buffer, image.type, userText);
 
     // 6. Search iNaturalist for references if we have a candidate name
     let references: unknown[] = [];
@@ -64,7 +79,7 @@ export async function POST(request: Request) {
     // 7. Evaluate Today's Nature Quest Match
     const category = (formData.get("category") as string) || "plant";
     const todayQuest = await getDailyQuest();
-    const questMatch = await evaluateQuestMatch(todayQuest, analysis, { category, description: description || "" });
+    const questMatch = await evaluateQuestMatch(todayQuest, analysis, { category, description: userText || "" });
 
     // 8. Calculate XP: 50 base XP + quest bonus if matched (70-100%)
     let xpAwarded = 50;

@@ -114,7 +114,7 @@ CRITICAL: Output must begin with { and end with }. Do not include any extra text
     const raw = data.result?.response ?? data.response;
     if (!raw) return null;
 
-    let jsonString = typeof raw === "string" ? raw.trim() : JSON.stringify(raw);
+    const jsonString = typeof raw === "string" ? raw.trim() : JSON.stringify(raw);
     const match = jsonString.match(/\{[\s\S]*?\}/);
     if (!match) return null;
 

@@ -22,7 +22,21 @@ import {
   type LocalDiscovery 
 } from "@/lib/client/journal-db";
 
-const FALLBACK_INSIGHT = {
+export interface InsightData {
+  name: string;
+  scientificName: string;
+  confidence: string;
+  image: string;
+  facts: string[];
+  ecologicalImportance: string;
+  characteristic: string;
+  lifeLesson: string;
+  quote: string | null;
+  reflectionQuestion: string;
+  detectedMood: string | null;
+}
+
+const FALLBACK_INSIGHT: InsightData = {
   name: "Monarch Butterfly",
   scientificName: "Danaus plexippus",
   confidence: "High",
@@ -35,7 +49,9 @@ const FALLBACK_INSIGHT = {
   ecologicalImportance: "Monarchs are important pollinators. Their population health serves as a crucial indicator of ecological changes and environmental well-being.",
   characteristic: "Metamorphosis and endurance",
   lifeLesson: "Just as the Monarch must dissolve completely within its chrysalis to become a butterfly, we too must sometimes let go of our past selves to transform. Their 3,000-mile journey reminds us that incredible feats are possible through persistence.",
-  reflectionQuestion: "What is a challenging journey or transformation you are currently undergoing, and how can you find the endurance to complete it?"
+  quote: "Change is not the end of life, but the beginning of flight.",
+  reflectionQuestion: "What is a challenging journey or transformation you are currently undergoing, and how can you find the endurance to complete it?",
+  detectedMood: null,
 };
 
 export function InsightClient() {
@@ -43,7 +59,7 @@ export function InsightClient() {
   const searchParams = useSearchParams();
   const id = searchParams.get("id");
   
-  const [data, setData] = useState(FALLBACK_INSIGHT);
+  const [data, setData] = useState<InsightData>(FALLBACK_INSIGHT);
   const [localDiscovery, setLocalDiscovery] = useState<LocalDiscovery | null>(null);
   const [dailyQuest, setDailyQuest] = useState<{ title: string; description: string; reward: number; date: string } | null>(null);
   const [questMatchInfo, setQuestMatchInfo] = useState<{ matched: boolean; score: number; bonusXp: number; reason?: string } | null>(null);
@@ -146,7 +162,9 @@ export function InsightClient() {
               ecologicalImportance: a?.ecologicalImportance || a?.ecologicalRole || `${specimenName} occupies a specialized ecological role within its natural community.`,
               characteristic: a?.naturalCharacteristic || a?.characteristic || "Specialized Natural Adaptation",
               lifeLesson: a?.metaphoricalLesson || a?.lifeLesson || `Like the ${specimenName}, our unique traits allow us to flourish even in demanding environments.`,
+              quote: a?.quote || null,
               reflectionQuestion: a?.reflectionQuestion || `What lessons of patience, resilience, and purpose can you draw from observing ${specimenName}?`,
+              detectedMood: a?.detectedMood || null,
             }));
             return;
           }
@@ -180,7 +198,9 @@ export function InsightClient() {
                 ecologicalImportance: a.ecologicalImportance || `${specimenName} plays a role in regional biodiversity.`,
                 characteristic: a.naturalCharacteristic || "Resilience & Growth",
                 lifeLesson: a.metaphoricalLesson || `Every natural element flourishes in its own season.`,
-                reflectionQuestion: a.reflectionQuestion || `What can we learn from the adaptability of this specimen?`
+                quote: a.quote || null,
+                reflectionQuestion: a.reflectionQuestion || `What can we learn from the adaptability of this specimen?`,
+                detectedMood: a.detectedMood || null,
               }));
             }
           }
@@ -225,7 +245,9 @@ export function InsightClient() {
               ecologicalImportance: a?.ecologicalImportance || a?.ecologicalRole || `${specimenName} occupies a specialized ecological role within its natural community.`,
               characteristic: a?.naturalCharacteristic || a?.characteristic || "Specialized Natural Adaptation",
               lifeLesson: a?.metaphoricalLesson || a?.lifeLesson || `Nature reminds us that adaptability fosters resilience.`,
+              quote: a?.quote || null,
               reflectionQuestion: a?.reflectionQuestion || `What personal reflections does this encounter inspire today?`,
+              detectedMood: a?.detectedMood || null,
             }));
             return;
           }
@@ -253,7 +275,9 @@ export function InsightClient() {
                 ecologicalImportance: a?.ecologicalImportance || `${specimenName} occupies a specialized niche.`,
                 characteristic: a?.naturalCharacteristic || "Specialized Adaptation",
                 lifeLesson: a?.metaphoricalLesson || `Nature teaches us persistence.`,
+                quote: a?.quote || null,
                 reflectionQuestion: a?.reflectionQuestion || `How does this observation inspire you?`,
+                detectedMood: a?.detectedMood || null,
               }));
             }
           } catch (err) {
@@ -566,11 +590,23 @@ export function InsightClient() {
         </div>
 
         <div className="flex flex-col gap-6">
-          <InsightSection icon={<Sparkles className="w-5 h-5 text-[#3E6548]" />} title="Metaphorical Lesson" variant="highlight">
-            <p className="font-bold text-[#3E6548] mb-1.5 uppercase text-xs tracking-wider">
-              Theme: {data.characteristic}
-            </p>
-            <p className="italic text-sm text-[#38483B] leading-relaxed">&quot;{data.lifeLesson}&quot;</p>
+          <InsightSection icon={<Sparkles className="w-5 h-5 text-[#3E6548]" />} title="Wisdom & Reflection" variant="highlight">
+            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              <span className="font-bold text-[#3E6548] uppercase text-xs tracking-wider">
+                Theme: {data.characteristic}
+              </span>
+              {data.detectedMood && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E4EEDF] text-[#294B36] border border-[#D2E3CE] text-xs font-semibold">
+                  🌱 Mood: {data.detectedMood}
+                </span>
+              )}
+            </div>
+            {data.quote && (
+              <blockquote className="text-base font-semibold text-[#1E3526] italic mb-3 border-l-2 border-[#294B36] pl-3 py-0.5">
+                &ldquo;{data.quote}&rdquo;
+              </blockquote>
+            )}
+            <p className="text-sm text-[#38483B] leading-relaxed">{data.lifeLesson}</p>
           </InsightSection>
 
           <InsightSection icon={<BookOpen className="w-5 h-5 text-[#3E6548]" />} title="Reflection">

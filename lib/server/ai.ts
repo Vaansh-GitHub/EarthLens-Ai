@@ -12,6 +12,7 @@ export const AnalysisResultSchema = z.object({
   metaphoricalLesson: z.string().nullable().describe("A separate metaphorical life lesson inspired by this subject"),
   quote: z.string().nullable().describe("A short, original, shareable quote about the subject"),
   reflectionQuestion: z.string().nullable().describe("A thought-provoking question for the user to reflect on"),
+  detectedMood: z.string().nullable().optional().describe("User's inferred mood/emotional state if text was provided, otherwise null"),
   searchTerms: z.array(z.string()).describe("Search terms (e.g. taxonomic names) for supporting references"),
   safetyNote: z.string().nullable().optional().describe("Safety warnings if potentially dangerous"),
 });
@@ -29,26 +30,42 @@ export async function analyzeImageWithAI(imageBuffer: Buffer, mimeType: string, 
   }
 
   const systemPrompt = `You are EarthLens AI, an expert naturalist and philosophical guide.
-PRIMARY DIRECTIVE: Rely strictly on what you visually see in the image pixels. User-selected categories (e.g. "other", "insect", "animal", etc.) or user field notes are subjective remarks and may be mistaken, playful, or contradictory (e.g. user selected "animal" or "other" for a Venus flytrap or plant). NEVER let user notes override what you visually see. Always identify the true specimen from the visual evidence in the image.
+PRIMARY DIRECTIVES:
+1. STRICT VISUAL TAXONOMY: Rely strictly on what you visually see in the image pixels. User-selected categories or user field notes are subjective remarks and must NEVER override the true specimen visible in the photograph.
+2. ADAPTIVE EMOTIONAL RESONANCE & MOOD-AWARE METAPHOR:
+   - The "quote" and "metaphoricalLesson" MUST ALWAYS remain intimately related to and inspired by the natural organism and characteristics visible in the photograph (e.g. the quiet resilience of moss, the patience of a seed, the bold bloom of a flower, the endurance of roots).
+   - TONE DETERMINATION:
+     * IF USER TEXT / FIELD NOTES ARE PROVIDED:
+       - Carefully analyze their words to discern the person's mood, emotional state, or sentiment (e.g. sad, weary, overwhelmed, anxious, peaceful, curious, joyful, hopeful).
+       - The tone of the quote and metaphorical lesson MUST be shaped by their mood:
+         • If the user is sad, discouraged, or exhausted: Comfort them, cheer them up, and motivate them through the natural organism's resilience, rebirth, and quiet endurance.
+         • If the user is anxious or stressed: Ground and soothe them with nature's stillness, rootedness, and patient unhurried cycles.
+         • If the user is joyful, curious, or grateful: Celebrate and amplify their wonder, energy, and connection to life.
+       - Identify and output a concise mood description in "detectedMood" (e.g. "Seeking Comfort & Uplift", "Reflective & Weary", "Peaceful & Grounded", "Joyful Wonder").
+     * IF NO USER TEXT IS GIVEN (or empty):
+       - Generate the quote and metaphorical lesson following the standard contemplative naturalist instructions: a profound, timeless ecological life lesson and an inspiring, memorable quote tailored directly to this organism's natural qualities.
+       - Set "detectedMood" to null.
 
 Analyze the image carefully and identify the organism accurately based on visual traits.
 Provide:
-1. Accurate common name (e.g. "Venus Flytrap", "Monarch Butterfly", "Silver Birch") and scientific name.
+1. Accurate common name and scientific name.
 2. Confidence ("High" or "Medium" based on visual clarity).
-3. Observable visual traits (e.g. trap lobes, hairs, leaf shape, coloration).
-4. Up to 3 concise, factual nature facts about this specific organism.
+3. Observable visual traits.
+4. Up to 3 concise, factual nature facts.
 5. Ecological role and environmental niche.
 6. A notable biological adaptation or characteristic.
-7. A profound metaphorical life lesson inspired by this organism's natural traits.
-8. A memorable, inspirational quote tailored directly to this organism's qualities.
-9. A thought-provoking reflection question for the outdoor explorer.
+7. A profound metaphorical life lesson (inspired by the organism, tone attuned to user mood if text is provided).
+8. A memorable quote (inspired by the organism, tone attuned to user mood if text is provided).
+9. A thought-provoking reflection question.
+10. "detectedMood" (inferred mood string if user text provided, or null if no user text).
+11. Search terms for references.
 
 CRITICAL INSTRUCTIONS:
 1. Output MUST be a strictly valid JSON object matching this schema.
 2. Do NOT wrap in markdown or backticks.
 3. Do NOT include unescaped quotes inside string values.
 4. Output must start with { and end with }.
-5. Never return generic statements like "The image does not provide any factual information". Always give genuine naturalist and ecological analysis for the specimen shown.
+5. Never return generic refusal statements. Always give genuine naturalist and ecological analysis for the specimen shown.
 
 Schema:
 {
@@ -63,12 +80,16 @@ Schema:
   "metaphoricalLesson": "Philosophical lesson inspired by this species",
   "quote": "Inspiring quote tailored to this species",
   "reflectionQuestion": "Thought-provoking question",
+  "detectedMood": "Inferred user mood string or null",
   "searchTerms": ["term 1", "term 2"]
 }`;
 
-  let promptContent = "Analyze the visual evidence in the image and provide the JSON object now.";
+  let promptContent: string;
   if (userNotes && userNotes.trim()) {
-    promptContent += ` (User note for context only: "${userNotes.trim()}". Remember: visual image pixels are the sole ground truth).`;
+    promptContent = `User's field notes and personal reflections: "${userNotes.trim()}".
+Analyze the visual evidence in the image. Identify the organism from the pixels. Guess and detect the user's emotional mood from their text, and shape the quote and metaphorical lesson so they are related to this organism while matching and uplifting the user's mood (e.g. if sad, cheer them up and motivate them). Set "detectedMood" to their detected mood. Provide the JSON object now.`;
+  } else {
+    promptContent = `No user notes provided. Analyze the visual evidence in the image. Identify the organism from the pixels. Generate the standard contemplative naturalist quote and metaphorical lesson tailored directly to this organism's natural qualities. Set "detectedMood" to null. Provide the JSON object now.`;
   }
 
   // Cloudflare Workers AI Vision model payload (uses prompt + image byte array)
@@ -241,6 +262,9 @@ function normalizeAnalysisData(data: Record<string, unknown>): Record<string, un
   if ("reflectionQuestion" in data) {
     normalized.reflectionQuestion = cleanString(data.reflectionQuestion);
   }
+  if ("detectedMood" in data) {
+    normalized.detectedMood = cleanString(data.detectedMood);
+  }
   if ("safetyNote" in data) {
     normalized.safetyNote = cleanString(data.safetyNote);
   }
@@ -268,6 +292,7 @@ function extractFromText(text: string): Record<string, unknown> {
   const lessonSection = getSection(/\*\*(?:Metaphorical Lesson|Lesson)\*\*[:\s]*([\s\S]*?)(?=\n\*\*|$)/i);
   const quoteSection = getSection(/\*\*(?:Quote)\*\*[:\s]*([\s\S]*?)(?=\n\*\*|$)/i);
   const questionSection = getSection(/\*\*(?:Reflection Question|Reflection)\*\*[:\s]*([\s\S]*?)(?=\n\*\*|$)/i);
+  const moodSection = getSection(/\*\*(?:Mood|Detected Mood)\*\*[:\s]*([\s\S]*?)(?=\n\*\*|$)/i);
 
   return {
     candidateCommonName: nameMatch ? nameMatch[1].replace(/[*_]/g, "").trim() : null,
@@ -281,6 +306,7 @@ function extractFromText(text: string): Record<string, unknown> {
     metaphoricalLesson: lessonSection,
     quote: quoteSection,
     reflectionQuestion: questionSection,
+    detectedMood: moodSection ? moodSection.replace(/[*_]/g, "").trim() : null,
     searchTerms: nameMatch ? [nameMatch[1].trim()] : ["botany", "nature"]
   };
 }

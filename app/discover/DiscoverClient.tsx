@@ -83,8 +83,12 @@ export function DiscoverClient() {
     try {
       const formData = new FormData();
       formData.append("image", imageFile);
-      if (notes || category) {
-        formData.append("description", `Category: ${category}. Notes: ${notes}`);
+      if (category) {
+        formData.append("category", category);
+      }
+      if (notes && notes.trim()) {
+        formData.append("notes", notes.trim());
+        formData.append("description", notes.trim());
       }
 
       const res = await fetch("/api/analyze", {
@@ -280,11 +284,14 @@ export function DiscoverClient() {
             </section>
 
             <section className="flex flex-col gap-3">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-[#5F7363]">3. Optional Field Notes</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-[#5F7363]">3. Optional Field Notes & Reflections</h2>
+                <span className="text-[11px] text-[#5F7363]/80">AI attunes quote tone to your words</span>
+              </div>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Where did you find this? Any interesting behaviors or environmental features?"
+                placeholder="Where did you find this? How are you feeling today? (e.g. tired, peaceful, seeking motivation, excited...)"
                 className="w-full bg-white border border-[#DCE5D8] rounded-2xl p-4 min-h-[120px] text-[#1E3526] placeholder:text-[#5F7363]/60 focus:outline-none focus:ring-2 focus:ring-[#294B36]/30 focus:border-[#294B36] resize-none transition-shadow text-sm"
               />
             </section>

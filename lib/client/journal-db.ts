@@ -21,6 +21,7 @@ export interface LocalDiscoveryAnalysis {
   lifeLesson?: string | null;
   quote?: string | null;
   reflectionQuestion?: string | null;
+  detectedMood?: string | null;
   searchTerms?: string[];
   safetyNotes?: string | null;
   funFact?: string | null;

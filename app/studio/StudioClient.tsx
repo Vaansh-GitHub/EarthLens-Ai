@@ -63,7 +63,7 @@ export function StudioClient() {
           const draft = await getDraftDiscovery();
           if (draft) {
             const a = draft.analysis;
-            const quote = a?.metaphoricalLesson || a?.lifeLesson || a?.quote || FALLBACK_DATA.quote;
+            const quote = a?.quote || a?.metaphoricalLesson || a?.lifeLesson || FALLBACK_DATA.quote;
             const title = a?.candidateCommonName || a?.candidateScientificName || a?.candidateIdentification || "Field Discovery";
             let image = FALLBACK_DATA.image;
             if (draft.imageBlob) {
@@ -79,7 +79,7 @@ export function StudioClient() {
           if (stored) {
             const parsed = JSON.parse(stored);
             const a = parsed.analysis;
-            const quote = a?.metaphoricalLesson || a?.lifeLesson || a?.quote || FALLBACK_DATA.quote;
+            const quote = a?.quote || a?.metaphoricalLesson || a?.lifeLesson || FALLBACK_DATA.quote;
             const title = a?.candidateCommonName || a?.candidateScientificName || "Field Discovery";
             const image = parsed.imageUrl || FALLBACK_DATA.image;
 
@@ -96,7 +96,7 @@ export function StudioClient() {
           if (localDoc) {
             const a = localDoc.analysis;
             const title = a?.candidateCommonName || a?.candidateScientificName || a?.candidateIdentification || "Field Discovery";
-            const quote = a?.metaphoricalLesson || a?.lifeLesson || localDoc.memoryCard?.quote || FALLBACK_DATA.quote;
+            const quote = a?.quote || a?.metaphoricalLesson || a?.lifeLesson || localDoc.memoryCard?.quote || FALLBACK_DATA.quote;
             let image = FALLBACK_DATA.image;
             if (localDoc.imageBlob) {
               image = updateCardImageBlob(localDoc.imageBlob);
@@ -127,7 +127,7 @@ export function StudioClient() {
               const doc = resJson.data;
               const a = doc.analysis;
               const title = a?.candidateCommonName || a?.candidateIdentification || "Field Discovery";
-              const quote = a?.metaphoricalLesson || a?.lifeLesson || doc.memoryCard?.quote || FALLBACK_DATA.quote;
+              const quote = a?.quote || a?.metaphoricalLesson || a?.lifeLesson || doc.memoryCard?.quote || FALLBACK_DATA.quote;
               const image = doc.observation?.photoUrl || FALLBACK_DATA.image;
 
               setCardData({ image, title, quote });
