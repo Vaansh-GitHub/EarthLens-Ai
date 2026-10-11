@@ -2,11 +2,76 @@
 
 import { useEffect, useState } from "react";
 
+export interface IdentificationContract {
+  commonName: string;
+  scientificName?: string | null;
+  confidence: number;
+  identificationNotes: string;
+}
+
+export interface QuestMatchContract {
+  score: number;
+  status: "strong_match" | "partial_match" | "insufficient_match";
+  matchedRequirements: string[];
+  missingRequirements: string[];
+  explanation: string;
+  retrySuggestion?: string | null;
+
+  // Compatibility fields
+  questMatchScore?: number;
+  questMatchStatus?: "strong_match" | "partial_match" | "insufficient_match";
+  matchExplanation?: string;
+  reason?: string;
+  matched?: boolean;
+  bonusXp?: number;
+}
+
+export interface VisibleEvidenceContractItem {
+  observation: string;
+  significance: string;
+}
+
+export interface NatureFactContractItem {
+  title: string;
+  detail: string;
+  evidenceType: "observed" | "established_fact" | "uncertain";
+}
+
+export interface EcologicalRoleContract {
+  title: string;
+  description: string;
+  ecologicalNeed: string;
+  conservationNote?: string | null;
+}
+
+export interface WisdomAndReflectionContract {
+  theme: string;
+  quote: string;
+  lifeConnection: string;
+  toneUsed: string;
+  imageConnection: string;
+}
+
+export interface ReflectionContract {
+  question: string;
+  journalPrompt: string;
+}
+
 export interface LocalDiscoveryAnalysis {
+  possibleIdentification?: IdentificationContract | string | null;
+  questMatch?: QuestMatchContract | null;
+  visibleEvidence?: VisibleEvidenceContractItem[] | string[];
+  natureFacts?: NatureFactContractItem[] | string[];
+  ecologicalRole?: EcologicalRoleContract | string | null;
+  wisdomAndReflection?: WisdomAndReflectionContract | null;
+  reflection?: ReflectionContract | string | null;
+  safetyNote?: string | null;
+
+  // Legacy flat fields for backwards compatibility
   candidateCommonName?: string | null;
   candidateScientificName?: string | null;
   candidateIdentification?: string | null;
-  confidence?: string | null;
+  confidence?: string | number | null;
   confidenceLevel?: string | null;
   uncertaintyReasoning?: string | null;
   rationale?: string | null;
@@ -14,16 +79,18 @@ export interface LocalDiscoveryAnalysis {
   observableTraits?: string[];
   facts?: string[];
   ecologicalImportance?: string | null;
-  ecologicalRole?: string | null;
+  ecologicalNeed?: string | null;
+  reflectionTheme?: string | null;
   naturalCharacteristic?: string | null;
   characteristic?: string | null;
+  originalQuote?: string | null;
+  quote?: string | null;
   metaphoricalLesson?: string | null;
   lifeLesson?: string | null;
-  quote?: string | null;
   reflectionQuestion?: string | null;
   detectedMood?: string | null;
-  searchTerms?: string[];
   safetyNotes?: string | null;
+  searchTerms?: string[];
   funFact?: string | null;
   inspirationalQuote?: string | null;
 }
@@ -37,6 +104,7 @@ export interface LocalDiscovery {
   category: string; // e.g. "plant", "animal", etc.
   notes: string;
   analysis: LocalDiscoveryAnalysis;
+  rawContractJson?: Record<string, unknown>;
   references?: Array<{
     id?: number | string;
     name?: string;
@@ -44,14 +112,10 @@ export interface LocalDiscovery {
     default_photo?: { medium_url?: string } | null;
     wikipedia_url?: string | null;
   }>;
-  questMatch?: {
+  questMatch?: (QuestMatchContract & {
     questDate?: string;
     questTitle?: string;
-    score?: number;
-    matched?: boolean;
-    bonusXp?: number;
-    reason?: string;
-  } | null;
+  }) | null;
   memoryCard?: {
     title?: string;
     quote?: string;

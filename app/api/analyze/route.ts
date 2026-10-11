@@ -76,10 +76,20 @@ export async function POST(request: Request) {
       }
     }
 
-    // 7. Evaluate Today's Nature Quest Match
+    // 7. Evaluate and Synchronize Today's Nature Quest Match
     const category = (formData.get("category") as string) || "plant";
     const todayQuest = await getDailyQuest();
     const questMatch = await evaluateQuestMatch(todayQuest, analysis, { category, description: userText || "" });
+
+    // Synchronize into complete contract
+    analysis.questMatch = {
+      score: questMatch.score,
+      status: questMatch.questMatchStatus,
+      matchedRequirements: questMatch.matchedRequirements,
+      missingRequirements: questMatch.missingRequirements,
+      explanation: questMatch.matchExplanation,
+      retrySuggestion: questMatch.retrySuggestion,
+    };
 
     // 8. Calculate XP: 50 base XP + quest bonus if matched (70-100%)
     let xpAwarded = 50;

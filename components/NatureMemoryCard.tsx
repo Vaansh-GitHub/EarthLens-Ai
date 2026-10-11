@@ -1,25 +1,40 @@
 /* eslint-disable @next/next/no-img-element */
+import { FormattedText } from "@/components/FormattedText";
+
 interface NatureMemoryCardProps {
   image: string;
   title: string;
-  reflection: string;
+  quote?: string;
+  lifeConnection?: string;
+  reflection?: string; // backwards-compatible alias
   date: string;
   styleVariant: "light" | "dark" | "earthy";
   showPhoto: boolean;
 }
 
-export function NatureMemoryCard({ image, title, reflection, date, styleVariant, showPhoto }: NatureMemoryCardProps) {
-  
+export function NatureMemoryCard({
+  image,
+  title,
+  quote,
+  lifeConnection,
+  reflection,
+  date,
+  styleVariant,
+  showPhoto
+}: NatureMemoryCardProps) {
   const styles = {
     light: "bg-[#FDFBF7] text-[#2D3A2F] border-[#E5DFD3]",
     dark: "bg-[#1E3329] text-[#FDFBF7] border-[#2C4A3B]",
     earthy: "bg-[#B58D67] text-[#FDFBF7] border-[#8B6B4D]"
   };
 
+  const quoteText = (quote || reflection || "").replace(/\*\*/g, "").replace(/^["'“`]+|["'”`]+$/g, "").trim();
+  const lifeText = (lifeConnection || "").replace(/\*\*/g, "").trim();
+
   return (
-    <div className={`w-full max-w-sm mx-auto aspect-[3/4] flex flex-col rounded-2xl overflow-hidden shadow-xl border ${styles[styleVariant]} transition-colors duration-500`}>
+    <div className={`w-full max-w-sm mx-auto min-h-[540px] flex flex-col rounded-3xl overflow-hidden shadow-xl border ${styles[styleVariant]} transition-colors duration-500`}>
       {showPhoto && (
-        <div className="h-1/2 w-full relative">
+        <div className="h-48 sm:h-52 w-full relative shrink-0">
           <img src={image} alt={title} className="w-full h-full object-cover" />
           <div className={`absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t to-transparent ${
             styleVariant === "light" ? "from-[#FDFBF7]" : 
@@ -28,20 +43,40 @@ export function NatureMemoryCard({ image, title, reflection, date, styleVariant,
         </div>
       )}
       
-      <div className={`flex flex-col flex-1 p-8 ${!showPhoto ? "justify-center" : ""}`}>
-        <div className="uppercase tracking-widest text-[10px] font-bold opacity-70 mb-2">EarthLens AI</div>
+      <div className={`flex flex-col flex-1 p-6 ${!showPhoto ? "justify-center" : ""}`}>
+        <div className="uppercase tracking-widest text-[10px] font-bold opacity-70 mb-1.5">
+          EARTHLENS AI
+        </div>
         
-        <h2 className="text-3xl font-serif font-bold mb-4 leading-tight">{title}</h2>
+        <h2 className="text-2xl sm:text-3xl font-serif font-bold mb-3 leading-tight">
+          {title}
+        </h2>
         
-        <div className="w-12 h-1 bg-current opacity-20 mb-6 rounded-full" />
+        <div className="w-12 h-1 bg-current opacity-25 mb-4 rounded-full" />
         
-        <p className="italic text-sm leading-relaxed opacity-90 flex-1">
-          &quot;{reflection || "Your reflection goes here..."}&quot;
-        </p>
+        {/* Prominent Original Quote */}
+        {quoteText && (
+          <blockquote className="italic font-serif text-sm sm:text-base leading-relaxed opacity-95 mb-3">
+            &ldquo;<FormattedText text={quoteText} />&rdquo;
+          </blockquote>
+        )}
+
+        {/* Life Connection beneath quote */}
+        {lifeText && (
+          <p className="text-xs sm:text-sm leading-relaxed opacity-85 mb-4 font-sans">
+            <FormattedText text={lifeText} />
+          </p>
+        )}
+
+        {!quoteText && !lifeText && (
+          <p className="italic text-sm leading-relaxed opacity-70 flex-1">
+            Your field reflection goes here...
+          </p>
+        )}
         
-        <div className="mt-auto pt-6 flex justify-between items-center text-xs font-medium opacity-60">
+        <div className="mt-auto pt-4 flex justify-between items-center text-xs font-medium opacity-65 border-t border-current/15">
           <span>{date}</span>
-          <span>An AI to link you to nature</span>
+          <span>EarthLens AI</span>
         </div>
       </div>
     </div>
